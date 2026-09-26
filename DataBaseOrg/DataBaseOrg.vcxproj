@@ -130,12 +130,17 @@
   <ItemGroup>
     <ClCompile Include="B_Tree.cpp" />
     <ClCompile Include="DataBaseOrg.cpp" />
+    <ClCompile Include="discPageManager.cpp" />
     <ClCompile Include="Index.cpp" />
+    <ClCompile Include="pageManager.cpp" />
     <ClCompile Include="Values.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="B_Tree.h" />
+    <ClInclude Include="cachePageManager.h" />
+    <ClInclude Include="discPageManager.h" />
     <ClInclude Include="Index.h" />
+    <ClInclude Include="pageManager.h" />
     <ClInclude Include="Values.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -9,6 +9,7 @@ static int Values::miniCompare(T a, T b)
     else { return 0; }
 }
 
+
 int8_t Values::compare(const Value a, const Value b, DataType type)
 {
     switch (type)

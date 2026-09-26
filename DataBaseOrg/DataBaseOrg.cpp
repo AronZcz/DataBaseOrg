@@ -1,6 +1,7 @@
 ﻿#include <iostream>
 #include "Values.h"
 #include "B_Tree.h"
+#include "cachePageManager.h"
 
 
 int main()
@@ -42,6 +43,20 @@ int main()
         << missing.size() << "\n";
 
 
+    // Test cache
+    cachePageManager<int> cacheManager;
+    cacheManager.insert(890, 1);
+    cacheManager.markClean(1);
+
+    
+    {
+        auto handler = cacheManager.get(1);
+        handler.set(900);
+        std::cout << handler.get() << '\n';
+        std::cout << cacheManager.remove(1) << '\n'; // 0: strona przypięta
+    }
+
+    std::cout << cacheManager.remove(1);
 
     return 0;
 }
