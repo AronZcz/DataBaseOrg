@@ -4,13 +4,17 @@
 #include <string>
 #include <vector>
 
+
+// integers for special: 0 = NULL, 1 = NaN, 2 = Infinity, 3 = -Infinity
+
 enum class DataType
 {
     Int,
     Float,
     Double,
     String,
-    Boolean
+    Boolean,
+    Special,
 };
 
 
@@ -28,4 +32,13 @@ public:
     static int miniCompare(T a, T b);
 
     static int8_t compare(const Value a, const Value b, DataType type);
+};
+
+
+struct Page 
+{
+    int pageId;
+    // B size
+    int pageSize;
+    int offset;
 };
