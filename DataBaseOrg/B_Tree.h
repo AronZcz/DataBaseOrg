@@ -13,6 +13,7 @@
 
 
 struct BTreeNode {
+    int PageID;
     std::vector<Label> keys;
     std::vector <BTreeNode> Children;
     bool leaf{ false };
@@ -40,11 +41,11 @@ public:
 
     std::vector<int> retrieve(const Value& key) const override; //IMP
 
-    bool remove(const Value& key, int rowID) override;  //NIMP
+    bool remove(const Value& key, int rowID) override;  //IMP
 
-    std::size_t removeByVal(const Value& key) override; //NIMP
+    std::vector<int> removeByVal(const Value& key) override; //IMP
 
-    void edit(const Value& oldVal, const Value& newVal, int rowID) override;    //NIMP
+    bool edit(const Value& oldVal, const Value& newVal, int rowID) override;    //NIMP
 
     void clear() override;  //NIMP
 

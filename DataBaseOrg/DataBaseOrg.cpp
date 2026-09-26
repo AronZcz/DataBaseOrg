@@ -19,6 +19,12 @@ int main()
     index->insert(Value{ int64_t{20} }, 6);
     index->insert(Value{ int64_t{20} }, 7);
 
+    // Usinięcie 
+
+    index->remove(Value{ int64_t{20} }, 2);
+
+    index->edit(Value{ int64_t{10} }, Value{ int64_t{20} }, 1);
+
     // RETRIEVE
     std::vector<int> result = index->retrieve(Value{ int64_t{20} });
 

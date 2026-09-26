@@ -32,10 +32,10 @@ public:
     virtual bool remove(const Value& key, int rowID) = 0;
 
     // usuwa wszystkie wyst¹pienia 
-    virtual std::size_t removeByVal(const Value& key) = 0;
+    virtual std::vector<int> removeByVal(const Value& key) = 0;
 
     // edytuje wartoœæ 
-    virtual void edit(const Value& oldVal, const Value& newVal, int rowID) = 0;
+    virtual bool edit(const Value& oldVal, const Value& newVal, int rowID) = 0;
 
     virtual void clear() = 0;
 

@@ -235,11 +235,94 @@ std::vector<int> B_Tree::retrieve(const Value& key) const
     }
 }
 
-bool B_Tree::remove(const Value& key, int rowID) { throw std::logic_error("not implemented"); };
+bool B_Tree::remove(const Value& key, int rowID) 
+{   
+    BTreeNode* heldNode = &root;
 
-std::size_t B_Tree::removeByVal(const Value& key) { throw std::logic_error("not implemented"); };
+    while (true)
+    {
+        size_t childIndex = heldNode->keys.size();
 
-void B_Tree::edit(const Value& oldVal, const Value& newVal, int rowID) { throw std::logic_error("not implemented"); };
+        for (size_t i = 0; i < heldNode->keys.size(); i++)
+        {
+            int cmp = Values::compare(key, heldNode->keys[i].val, this->type);
+
+            if (cmp == 0)
+            {
+                for (size_t j = 0; j < heldNode->keys[i].tableIndex.size(); j++)
+                {
+                    if(heldNode->keys[i].tableIndex[j] == rowID) 
+                    {
+                        heldNode->keys[i].tableIndex.erase(
+                            heldNode->keys[i].tableIndex.begin() + j
+                        );
+
+                        return true;
+                    }
+                }
+            }
+
+            if (cmp < 0)
+            {
+                childIndex = i;
+                break;
+            }
+        }
+
+        if (heldNode->leaf)
+        {
+            return false;;
+        }
+
+        heldNode = &heldNode->Children[childIndex];
+    }
+}
+
+std::vector<int> B_Tree::removeByVal(const Value& key) 
+{
+    BTreeNode* heldNode = &root;
+
+    while (true)
+    {
+        size_t childIndex = heldNode->keys.size();
+
+        for (size_t i = 0; i < heldNode->keys.size(); i++)
+        {
+            int cmp = Values::compare(key, heldNode->keys[i].val, this->type);
+
+            if (cmp == 0)
+            {
+                std::vector<int> tmp = std::move(heldNode->keys[i].tableIndex);
+                heldNode->keys[i].tableIndex.clear();
+
+                return tmp;
+            }
+
+            if (cmp < 0)
+            {
+                childIndex = i;
+                break;
+            }
+        }
+
+        if (heldNode->leaf)
+        {
+            return {};
+        }
+
+        heldNode = &heldNode->Children[childIndex];
+    }
+}
+
+bool B_Tree::edit(const Value& oldVal, const Value& newVal, int rowID) 
+{
+	if (remove(oldVal, rowID))
+	{
+		insert(newVal, rowID);
+        return true;
+	}
+    return false;
+}
 
 void B_Tree::clear() { throw std::logic_error("not implemented"); };
 
