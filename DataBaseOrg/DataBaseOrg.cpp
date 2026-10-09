@@ -1,17 +1,21 @@
 ﻿#include <iostream>
 #include "Values.h"
 #include "B_Tree.h"
-#include "cachePageManager.h"
+#include "pageManager.h"
+
 
 
 int main()
 {
-    B_Tree tree = B_Tree(DataType::Int, 4);
-    IndexInterface* index = &tree;
+    pageManager::init();
 
+    B_Tree tree = B_Tree(DataType::Int, 4, -1);
+    IndexInterface* index = &tree;
+    
     // INSERT
     index->insert(Value{ int64_t{10} }, 1);
     index->insert(Value{ int64_t{20} }, 2);
+    //index->insert(Value{ int64_t{20} }, 100);
     index->insert(Value{ int64_t{30} }, 3);
     index->insert(Value{ int64_t{40} }, 4);
     index->insert(Value{ int64_t{50} }, 5);
@@ -39,24 +43,31 @@ int main()
     // Test nieistniejącej wartości
     std::vector<int> missing = index->retrieve(Value{ int64_t{999} });
 
-    std::cout << "\nRows for value 999: "
+    std::cout << "\nRows with value 999: "
         << missing.size() << "\n";
 
+    //// Test cache
+    //cachePageManager<int> cacheManager;
+    //cacheManager.insert(890, 1);
+    //cacheManager.markClean(1);
 
-    // Test cache
-    cachePageManager<int> cacheManager;
-    cacheManager.insert(890, 1);
-    cacheManager.markClean(1);
+    //
+    //{
+    //    auto handler = cacheManager.get(1);
+    //    std::cout << handler.get() << '\n';
+    //    std::cout << cacheManager.remove(1) << '\n'; // 0: strona przypięta
+    //}
 
-    
-    {
-        auto handler = cacheManager.get(1);
-        handler.set(900);
-        std::cout << handler.get() << '\n';
-        std::cout << cacheManager.remove(1) << '\n'; // 0: strona przypięta
-    }
+    //std::cout << cacheManager.remove(1);
 
-    std::cout << cacheManager.remove(1);
+    //// Test disc
+
+    //Serializer<int>* serializer = new SerializerInt();
+    //discPageManager<int> discManager(serializer,"C:\\Users\\Aron\\source\\repos\\DataBaseOrg\\x64\\Debug\\testfile.dat", 0);
+
+    //int obj = discManager.deserializeObject(2);
+
+    //std::cout << "\n\nDeserialized object: " << obj << std::endl;
 
     return 0;
 }

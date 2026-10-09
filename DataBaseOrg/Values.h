@@ -34,11 +34,3 @@ public:
     static int8_t compare(const Value a, const Value b, DataType type);
 };
 
-
-struct Page 
-{
-    int pageId;
-    // B size
-    int pageSize;
-    int offset;
-};

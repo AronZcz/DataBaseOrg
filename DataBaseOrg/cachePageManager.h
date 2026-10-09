@@ -11,12 +11,14 @@ class cachePageManager;
 
 
 // RAII pilnuje przed kopiowaniem w≥aúciwego wskaünika, a takøe automatycznie odpinanie obiektu z cachePageManager przy wyjúciu z zakresu
+// Pins/Unpins and sets/unsets dirty;
 template <typename T>
 class RAIIhandler
 {
-	T* ptr;
+	T* ptr {nullptr};
 	cachePageManager<T>* manager;
-	int pageID;
+	int pageID {};
+	bool pined {false};
 public:
 	// Only allow construction with a pointer to T
 	explicit RAIIhandler(T* p, cachePageManager<T>* m, int id) : ptr(p), manager(m), pageID(id) {}
@@ -24,22 +26,47 @@ public:
 	// Automatically delete the managed object when RAIIHandler goes out of scope
 	~RAIIhandler()
 	{
-		manager->release(pageID);
+		if(pined)
+		{
+			manager->unpin(pageID);
+		}
 	}
 	
 	const T& read()
 	{
-		return *ptr;
+		if(!ptr)
+		{
+			throw std::exception();
+		}
+		if (!pined)
+		{
+			manager->pin(pageID);
+			pined = true;
+			return *ptr;
+		}
+		else throw std::exception();
 	}
 
 	T& get() 
 	{
-		manager->markDirty(pageID);
-		return *ptr;
+		if (!ptr)
+		{
+			throw std::exception();
+		}
+		if (!pined)
+		{
+			manager->markDirty(pageID);
+			manager->pin(pageID);
+			pined = true;
+			return *ptr;
+		}
+		else throw std::exception();
 	}
 
 	RAIIhandler(const RAIIhandler&) = delete;
+
 	RAIIhandler& operator=(const RAIIhandler&) = delete;
+
 };
 
 template <typename T>
@@ -55,23 +82,20 @@ class cachePageManager
 	std::unordered_map<int, bool> dirtyPages;
 public:
 	// Find stored object and return handler
-	const RAIIhandler<T> get(int pageID) 
+	T* get(int pageID) 
 	{
 		if (cacheMap.find(pageID) == cacheMap.end())
 		{
-			throw std::runtime_error("Trying to get a page that is not in cache");
+			throw std::exception();
 		}
 
 		if (lockedPages.contains(pageID))
 		{
-			throw std::runtime_error("Trying to get a locked page");
+			throw std::exception();
 		}
 
-		// Pin the page to prevent eviction while in use
-		pinnedPages[pageID]++;
-
 		auto it = cacheMap.find(pageID);
-		return RAIIhandler<T>(&it->second, this, pageID);
+		return  &it->second;
 	}
 
 	void release(int pageID)
@@ -86,13 +110,6 @@ public:
 			unpin(pageID);             // koniec jednego get()
 		else
 			throw std::runtime_error("Page is not in use");
-
-		if(dirtyPages.contains(pageID))
-		{
-			// Here you would typically write the dirty page back to disk or database
-			// For this example, we'll just mark it as clean
-			dirtyPages.erase(pageID);
-		}
 	}
 
 	void markClean(int pageID) 
@@ -148,6 +165,11 @@ public:
 		}
 
 		dirtyPages[pageID] = true; // Mark the page as dirty
+	}
+
+	bool isDirty(int pageID)
+	{
+		return dirtyPages[pageID];
 	}
 
 	// Mark an object as pinned (not to be evicted)

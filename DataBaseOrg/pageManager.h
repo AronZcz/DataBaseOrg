@@ -3,55 +3,148 @@
 #include <vector>
 #include "cachePageManager.h"
 #include "discPageManager.h"
-
 #include "B_Tree.h"
 
 
-class pageManager
+// First look up in cache then in disc, if not found return nullptr
+
+// Adding first occurs in disc then in cache because id must be given by disc manager.
+
+// LATER if id exceeds max id then new file must be created with new menager to that file
+
+
+static class pageManager
 {
-	cachePageManager<BTreeNode> cachedNodes;
-	discPageManager<BTreeNode> discNodes;
+	static inline SerializerBTreeNode bTreeNodeSerializer {};
+	static inline  SerializerBTree bTreeSerializer {};
+
+	static inline cachePageManager<BTreeNode> cachedNodes{};
+	static inline discPageManager<BTreeNode> storedNodes{ discPageManager<BTreeNode>(&bTreeNodeSerializer, "SerializedNodes.bin", 4096) };
+
+	static inline cachePageManager<B_Tree> cachedTrees{};
+	static inline discPageManager<B_Tree> storedTrees{ discPageManager<B_Tree>(&bTreeSerializer, "SerializedTrees.bin", 4096) };
 
 	// Later saving metadata about databases, settings, etc. can be added here
 
-	BTreeNode getNodeFromCache(int pageID);
-	BTreeNode getNodeFromDisc(int pageID);
-
-	// Get node from cache or disc;
-	BTreeNode getStoredNode(int pageID);
-
-	// Get pointer to node in cache
-	BTreeNode* getNodePointer(int pageID);
-
-	// Store node in cache
-	void storeInCacheNode(int pageID, BTreeNode node);
-
-	// Store node on disc and mark it as clean
-	void storeCachedNode(int pageID);
-
-	// Free memory cached node and remove it from cache, if it is dirty, save it to disc first
-	void removeFromCacheNode(int pageID);
-
-	// Remove node from disc, if it is dirty, save it to disc first
-	void removeFromDiscNode(int pageID);
 
 public:
+	static void init()
+	{
+		
+	}
+
 	
-	// Save all changes to disk
-	void dumpChanges();
+	// NODES // 
 
-	// Get node from cache or disc, if not found return nullptr
-	BTreeNode* getNode(int pageID);
+	// Get node from cache or disc, if not found return nullptr.
+	static RAIIhandler<BTreeNode> getNode(int pageID)
+	{
+		BTreeNode* node;
+		BTreeNode liveNode;
+		// CHECK cache
+		node = cachedNodes.get(pageID);
+		if(node != nullptr)
+		{
+			// IS in cache
+			return RAIIhandler<BTreeNode>(node, &cachedNodes, pageID);
+		}
+		// TRY disc
+		else 
+		{
+			if(storedNodes.deserializeObject(pageID, liveNode))
+			{
+				// Added to cache
+				cachedNodes.insert(liveNode, pageID);
+				node = cachedNodes.get(pageID);
+				return RAIIhandler<BTreeNode>(node, &cachedNodes, pageID);
+			}else
+			{
+				// DO not exist
+				return RAIIhandler<BTreeNode>(nullptr, &cachedNodes, pageID);
+			}
+		}
+	}
 
-	// store node in cache and disc, if it already exists in cache, modify it and mark it as clean
-	void storeNode(int pageID, BTreeNode node);
+	// store node in disc form cache, mark it as clean.
+	static void storeNode(int pageID)
+	{
+		BTreeNode* node {};
+		node = cachedNodes.get(pageID);
 
-	// Remove node from cache and disc, if it exists
-	void removeNode(int pageID);
+		if(node != nullptr)
+		{
+			storedNodes.modifyPage(pageID, *node);
+			cachedNodes.markClean(pageID);
+		}
+	}
 
-	// Zmniejsza licznik przypiêæ
-	void releaseNode(int pageID);    
+	// Remove node from cache and disc, if it exists.
+	static void removeNode(int pageID);
 
-	// Oznacza zmianê przez wskaŸnik
-	void markNodeDirty(int pageID);  
+	// Creates page in sorage and then put it in cache.
+	static int createNode(BTreeNode &node)
+	{
+		int pageID = storedNodes.createPage(node);
+		cachedNodes.insert(node, pageID);
+
+		return pageID;
+	}
+
+	
+	// TREES // 
+
+	// Get node from cache or disc, if not found return nullptr.
+	//static RAIIhandler<B_Tree> getTree(int pageID)
+	//{
+	//	BTreeNode* node;
+	//	BTreeNode liveNode;
+	//	// CHECK cache
+	//	node = cachedNodes.get(pageID);
+	//	if (node != nullptr)
+	//	{
+	//		// IS in cache
+	//		return RAIIhandler<BTreeNode>(node, &cachedNodes, pageID);
+	//	}
+	//	// TRY disc
+	//	else
+	//	{
+	//		if (storedNodes.deserializeObject(pageID, liveNode))
+	//		{
+	//			// Added to cache
+	//			cachedNodes.insert(liveNode, pageID);
+	//			node = cachedNodes.get(pageID);
+	//			return RAIIhandler<BTreeNode>(node, &cachedNodes, pageID);
+	//		}
+	//		else
+	//		{
+	//			// DO not exist
+	//			return RAIIhandler<BTreeNode>(nullptr, &cachedNodes, pageID);
+	//		}
+	//	}
+	//}
+
+	//// store node in disc form cache, mark it as clean.
+	//static void storeTree(int pageID)
+	//{
+	//	BTreeNode* node{};
+	//	node = cachedNodes.get(pageID);
+
+	//	if (node != nullptr)
+	//	{
+	//		storedNodes.modifyPage(pageID, *node);
+	//		cachedNodes.markClean(pageID);
+	//	}
+	//}
+
+	//// Remove node from cache and disc, if it exists.
+	//static void removeTree(int pageID);
+
+	//// Creates page in sorage and then put it in cache.
+	//static int createTree(B_Tree& tree)
+	//{
+	//	int pageID = storedNodes.createPage(node);
+	//	cachedNodes.insert(node, pageID);
+
+	//	return pageID;
+	//}
 };

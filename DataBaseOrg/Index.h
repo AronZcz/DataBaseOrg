@@ -14,6 +14,7 @@
 
 struct Label
 {
+    DataType type;
     Value val;
     std::vector<int> tableIndex;
 };

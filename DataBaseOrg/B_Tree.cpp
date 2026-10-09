@@ -1,9 +1,11 @@
 ﻿#include "B_Tree.h"
 #include <stdexcept>
+#include "pageManager.h"
 
-B_Tree::B_Tree(DataType type, int degree)
+
+B_Tree::B_Tree(DataType type, int degree, int rootNodeId)
 {
-    this->root;
+    this->rootNodeId = rootNodeId;
     this->type = type;
     this->t = degree;
 
@@ -12,10 +14,10 @@ B_Tree::B_Tree(DataType type, int degree)
 
 void B_Tree::insert(const Value& key, int rowID)
 {
-    // OBSŁUGA
-    
-    if (root.keys.empty())
+    // OBSŁUGA braku
+    if (rootNodeId == -1)
     {
+        BTreeNode root;
         // pustego roota,
         // pusty root → utwórz pierwszy Label, ustaw root.leaf = true
         root.leaf = true;
@@ -23,12 +25,19 @@ void B_Tree::insert(const Value& key, int rowID)
         Label l;
         l.val = key;
         l.tableIndex.push_back(rowID);
+        l.type = this->type;
 
         root.keys.push_back(l);
+
+        rootNodeId = pageManager::createNode(root);
         return;
     }
+
+    auto rootHandler = pageManager::getNode(rootNodeId);
+    BTreeNode &root = rootHandler.get();
+
     // niepełnego roota,
-    else if (root.keys.size() >= this->n)
+    if (root.keys.size() >= this->n)
     {
         // pełnego roota
         // pełny root → utwórz newRoot, dodaj stary root jako Children[0],
@@ -38,9 +47,14 @@ void B_Tree::insert(const Value& key, int rowID)
         // Przebuduj
         BTreeNode newRoot;
         newRoot.leaf = false;
-        newRoot.Children.push_back(root);
+
+
+        newRoot.ChildrensId.push_back(rootNodeId);
         splitChild(newRoot, 0);
-        root = newRoot;
+
+        rootNodeId = pageManager::createNode(newRoot);
+        auto rootHandler = pageManager::getNode(rootNodeId);
+        BTreeNode& root = rootHandler.get();
 
         // Wstaw Label
         insertNonFull(root, key, rowID);
@@ -74,6 +88,7 @@ void B_Tree::insertNonFull(BTreeNode& node, const Value& key, int rowID)
         Label lt;
         lt.val = key;
         lt.tableIndex.push_back(rowID);
+        lt.type = this->type;
 
         for (size_t i{ 0 }; i < node.keys.size(); i++)
         {
@@ -104,7 +119,12 @@ void B_Tree::insertNonFull(BTreeNode& node, const Value& key, int rowID)
         }
 
         // 2. sprawdź czy to dziecko jest pełne
-        if(node.Children[childIndex].keys.size() >= this->n)
+
+        auto childHandler = pageManager::getNode(node.ChildrensId[childIndex]);
+        BTreeNode &child = childHandler.get();
+
+
+        if(child.keys.size() >= this->n)
         {
             // 3. jeśli pełne -> splitChild(node, index)
             splitChild(node, childIndex);
@@ -115,29 +135,33 @@ void B_Tree::insertNonFull(BTreeNode& node, const Value& key, int rowID)
         }
         
         // 5. wywołaj rekurencyjnie insertNonFull(...)
-        insertNonFull(node.Children[childIndex], key, rowID);
+
+        insertNonFull(child, key, rowID);
     }
 }
 
 void B_Tree::splitChild(BTreeNode& parent, std::size_t childIndex)
 {
+    auto childHandler = pageManager::getNode(parent.ChildrensId[childIndex]);
+    BTreeNode& child = childHandler.get();
     // wybrać środkowy Label,
-    int midPoint = parent.Children[childIndex].keys.size() / 2;
-    Label midLabel = parent.Children[childIndex].keys[midPoint];
+    int midPoint = child.keys.size() / 2;
+
+    Label midLabel = child.keys[midPoint];
 
     // utworzyć nowy node,
     BTreeNode newNode;
 
-    newNode.leaf = parent.Children[childIndex].leaf;
+    newNode.leaf = child.leaf;
 
     std::vector<Label> rightPart(
-        parent.Children[childIndex].keys.begin() + midPoint + 1,
-        parent.Children[childIndex].keys.end()
+        child.keys.begin() + midPoint + 1,
+        child.keys.end()
     );
 
     std::vector<Label> leftPart(
-        parent.Children[childIndex].keys.begin(),
-        parent.Children[childIndex].keys.begin() + midPoint
+        child.keys.begin(),
+        child.keys.begin() + midPoint
     );
 
     // przenieść prawą połowę kluczy do nowego noda,
@@ -150,10 +174,10 @@ void B_Tree::splitChild(BTreeNode& parent, std::size_t childIndex)
 
    
     // zostawić lewą połowę w starym,
-    parent.Children[childIndex].keys.clear();
+    child.keys.clear();
     for (Label& l : leftPart)
     {
-        parent.Children[childIndex].keys.push_back(l);
+        child.keys.push_back(l);
     }
     
     // wstawić środkowy klucz do parent.keys,
@@ -162,61 +186,69 @@ void B_Tree::splitChild(BTreeNode& parent, std::size_t childIndex)
 
     // Warunek sprawdzający, czy dzielony node nie jest liściem.
 
-    if (!parent.Children[childIndex].leaf)
+    if (!child.leaf)
     {
         // tutaj bierzesz vector Children splitowanego noda
         
-        std::vector<BTreeNode> rightPart(
-                parent.Children[childIndex].Children.begin() + midPoint + 1,
-                parent.Children[childIndex].Children.end()
+        std::vector<int> rightPart(
+            child.ChildrensId.begin() + midPoint + 1,
+            child.ChildrensId.end()
             );
 
-        std::vector<BTreeNode> leftPart(
-            parent.Children[childIndex].Children.begin(),
-            parent.Children[childIndex].Children.begin() + midPoint + 1
+        std::vector<int> leftPart(
+            child.ChildrensId.begin(),
+            child.ChildrensId.begin() + midPoint + 1
         );
 
         // pierwszą część zostawiasz w starym nodzie
 
-        parent.Children[childIndex].Children.clear();
+        child.ChildrensId.clear();
 
-        for (BTreeNode& l : leftPart)
+        for (int& l : leftPart)
         {
-            parent.Children[childIndex].Children.push_back(l);
+            child.ChildrensId.push_back(l);
         }
 
         // drugą część przenosisz do newNode.Children
 
-        for (BTreeNode& r : rightPart)
+        for (int& r : rightPart)
         {
-            newNode.Children.push_back(r);
+            newNode.ChildrensId.push_back(r);
         }
     }
 
 
     // wstawić nowego childa do parent.Children zaraz za starym childem.
 
-    parent.Children.insert(
-        parent.Children.begin() + childIndex + 1,
-        newNode
+    int newNodeID = pageManager::createNode(newNode);
+
+
+    parent.ChildrensId.insert(
+        parent.ChildrensId.begin() + childIndex + 1,
+        newNodeID
     );
 }
 
 std::vector<int> B_Tree::retrieve(const Value& key) const
 {
-    const BTreeNode* heldNode = &root;
+    int heldNodeID = rootNodeId;
+
+    if (rootNodeId == -1) return {};
 
     while (true)
     {
-        size_t childIndex = heldNode->keys.size();
+        auto heldNodeHandler = pageManager::getNode(heldNodeID);
+        BTreeNode heldNode = heldNodeHandler.read();
 
-        for (size_t i = 0; i < heldNode->keys.size(); i++)
+        size_t childIndex = heldNode.keys.size();
+
+        for (size_t i = 0; i < heldNode.keys.size(); i++)
         {
-            int cmp = Values::compare(key, heldNode->keys[i].val, this->type);
+            int cmp = Values::compare(key, heldNode.keys[i].val, this->type);
 
             if (cmp == 0)
             {
-                return heldNode->keys[i].tableIndex;
+                return heldNode.keys[i].tableIndex;
             }
 
             if (cmp < 0)
@@ -226,35 +258,40 @@ std::vector<int> B_Tree::retrieve(const Value& key) const
             }
         }
 
-        if (heldNode->leaf)
+        if (heldNode.leaf)
         {
             return {};
         }
 
-        heldNode = &heldNode->Children[childIndex];
+       
+        heldNodeID = heldNode.ChildrensId[childIndex];
     }
 }
 
 bool B_Tree::remove(const Value& key, int rowID) 
 {   
-    BTreeNode* heldNode = &root;
+    int heldNodeID = rootNodeId;
 
     while (true)
     {
-        size_t childIndex = heldNode->keys.size();
+        auto heldNodeHandler = pageManager::getNode(heldNodeID);
+        BTreeNode heldNode = heldNodeHandler.read();
 
-        for (size_t i = 0; i < heldNode->keys.size(); i++)
+
+        size_t childIndex = heldNode.keys.size();
+
+        for (size_t i = 0; i < heldNode.keys.size(); i++)
         {
-            int cmp = Values::compare(key, heldNode->keys[i].val, this->type);
+            int cmp = Values::compare(key, heldNode.keys[i].val, this->type);
 
             if (cmp == 0)
             {
-                for (size_t j = 0; j < heldNode->keys[i].tableIndex.size(); j++)
+                for (size_t j = 0; j < heldNode.keys[i].tableIndex.size(); j++)
                 {
-                    if(heldNode->keys[i].tableIndex[j] == rowID) 
+                    if(heldNode.keys[i].tableIndex[j] == rowID) 
                     {
-                        heldNode->keys[i].tableIndex.erase(
-                            heldNode->keys[i].tableIndex.begin() + j
+                        heldNode.keys[i].tableIndex.erase(
+                            heldNode.keys[i].tableIndex.begin() + j
                         );
 
                         return true;
@@ -269,31 +306,36 @@ bool B_Tree::remove(const Value& key, int rowID)
             }
         }
 
-        if (heldNode->leaf)
+        if (heldNode.leaf)
         {
-            return false;;
+            return false;
         }
 
-        heldNode = &heldNode->Children[childIndex];
+       
+
+        heldNodeID = heldNode.ChildrensId[childIndex];
     }
 }
 
 std::vector<int> B_Tree::removeByVal(const Value& key) 
 {
-    BTreeNode* heldNode = &root;
+    int heldNodeID = rootNodeId;
 
     while (true)
     {
-        size_t childIndex = heldNode->keys.size();
+        auto heldNodeHandler = pageManager::getNode(heldNodeID);
+        BTreeNode heldNode = heldNodeHandler.read();
 
-        for (size_t i = 0; i < heldNode->keys.size(); i++)
+        size_t childIndex = heldNode.keys.size();
+
+        for (size_t i = 0; i < heldNode.keys.size(); i++)
         {
-            int cmp = Values::compare(key, heldNode->keys[i].val, this->type);
+            int cmp = Values::compare(key, heldNode.keys[i].val, this->type);
 
             if (cmp == 0)
             {
-                std::vector<int> tmp = std::move(heldNode->keys[i].tableIndex);
-                heldNode->keys[i].tableIndex.clear();
+                std::vector<int> tmp = std::move(heldNode.keys[i].tableIndex);
+                heldNode.keys[i].tableIndex.clear();
 
                 return tmp;
             }
@@ -305,12 +347,12 @@ std::vector<int> B_Tree::removeByVal(const Value& key)
             }
         }
 
-        if (heldNode->leaf)
+        if (heldNode.leaf)
         {
             return {};
         }
 
-        heldNode = &heldNode->Children[childIndex];
+        heldNodeID = heldNode.ChildrensId[childIndex];
     }
 }
 
