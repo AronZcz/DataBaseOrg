@@ -49,7 +49,7 @@ public:
 
 	T& get() 
 	{
-		if (!ptr)
+		if (ptr == nullptr)
 		{
 			throw std::exception();
 		}
@@ -61,6 +61,17 @@ public:
 			return *ptr;
 		}
 		else throw std::exception();
+	}
+
+	bool isEmpty()
+	{
+		if(ptr == nullptr)
+		{
+			return 1;
+		}
+
+		return 0;
+		
 	}
 
 	RAIIhandler(const RAIIhandler&) = delete;
@@ -81,20 +92,34 @@ class cachePageManager
 	// Mark for locked objects that should not fetched for other threads
 	std::unordered_map<int, bool> dirtyPages;
 public:
+	~cachePageManager()
+	{
+		cacheMap.clear();
+	}
+
+
 	// Find stored object and return handler
 	T* get(int pageID) 
 	{
-		if (cacheMap.find(pageID) == cacheMap.end())
+		// NOT FOUND
+		if (!cacheMap.contains(pageID))
 		{
-			throw std::exception();
+			return nullptr;
 		}
 
+		// IS LOCKED
 		if (lockedPages.contains(pageID))
 		{
-			throw std::exception();
+			return nullptr;
 		}
 
 		auto it = cacheMap.find(pageID);
+
+		if (it == cacheMap.end()) {
+			// Brak strony w cache
+			return nullptr;
+		}
+
 		return  &it->second;
 	}
 
@@ -125,6 +150,7 @@ public:
 	}
 
 	// Add object to cache, returns the pageID of the inserted object
+	// Only for new just created objects
 	void insert(T obj, int pageID) 
 	{
 		if (cacheMap.contains(pageID))
@@ -133,6 +159,17 @@ public:
 		}
 
 		dirtyPages[pageID] = true; // Mark the page as dirty
+
+		cacheMap[pageID] = obj;
+	}
+
+	// Old objects stored on disc
+	void load(T obj, int pageID)
+	{
+		if (cacheMap.contains(pageID))
+		{
+			throw std::runtime_error("Trying to insert a page that is already in cache");
+		}
 
 		cacheMap[pageID] = obj;
 	}
@@ -204,5 +241,26 @@ public:
 		}
 	}
 
-	std::vector<int> getDirtyPages();
+	std::vector<int> getDirtyPages() const
+	{
+		std::vector<int> ids;
+
+		for (const auto& [id, dirty] : dirtyPages)
+			if (dirty)
+				ids.push_back(id);
+
+		return ids;
+	}
+
+	// Throws BIG errors
+	void clear()
+	{
+		cacheMap.clear();
+
+		pinnedPages.clear();
+
+		lockedPages.clear();
+
+		dirtyPages.clear();
+	}
 };

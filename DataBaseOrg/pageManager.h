@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iostream>
 #include <vector>
 #include "cachePageManager.h"
 #include "discPageManager.h"
@@ -16,7 +17,7 @@
 static class pageManager
 {
 	static inline SerializerBTreeNode bTreeNodeSerializer {};
-	static inline  SerializerBTree bTreeSerializer {};
+	static inline SerializerBTree bTreeSerializer {};
 
 	static inline cachePageManager<BTreeNode> cachedNodes{};
 	static inline discPageManager<BTreeNode> storedNodes{ discPageManager<BTreeNode>(&bTreeNodeSerializer, "SerializedNodes.bin", 4096) };
@@ -26,14 +27,9 @@ static class pageManager
 
 	// Later saving metadata about databases, settings, etc. can be added here
 
+	// Later change to four funcs that can distinguish where what goes
 
 public:
-	static void init()
-	{
-		
-	}
-
-	
 	// NODES // 
 
 	// Get node from cache or disc, if not found return nullptr.
@@ -54,7 +50,7 @@ public:
 			if(storedNodes.deserializeObject(pageID, liveNode))
 			{
 				// Added to cache
-				cachedNodes.insert(liveNode, pageID);
+				cachedNodes.load(liveNode, pageID);
 				node = cachedNodes.get(pageID);
 				return RAIIhandler<BTreeNode>(node, &cachedNodes, pageID);
 			}else
@@ -93,58 +89,83 @@ public:
 	
 	// TREES // 
 
-	// Get node from cache or disc, if not found return nullptr.
-	//static RAIIhandler<B_Tree> getTree(int pageID)
-	//{
-	//	BTreeNode* node;
-	//	BTreeNode liveNode;
-	//	// CHECK cache
-	//	node = cachedNodes.get(pageID);
-	//	if (node != nullptr)
-	//	{
-	//		// IS in cache
-	//		return RAIIhandler<BTreeNode>(node, &cachedNodes, pageID);
-	//	}
-	//	// TRY disc
-	//	else
-	//	{
-	//		if (storedNodes.deserializeObject(pageID, liveNode))
-	//		{
-	//			// Added to cache
-	//			cachedNodes.insert(liveNode, pageID);
-	//			node = cachedNodes.get(pageID);
-	//			return RAIIhandler<BTreeNode>(node, &cachedNodes, pageID);
-	//		}
-	//		else
-	//		{
-	//			// DO not exist
-	//			return RAIIhandler<BTreeNode>(nullptr, &cachedNodes, pageID);
-	//		}
-	//	}
-	//}
+	//Get tree from cache or disc, if not found return nullptr.
+	static RAIIhandler<B_Tree> getTree(int pageID)
+	{
+		B_Tree* tree {nullptr};
+		B_Tree liveTree;
+		// CHECK cache
+		tree = cachedTrees.get(pageID);
+		if (tree != nullptr)
+		{
+			// IS in cache
+			return RAIIhandler<B_Tree>(tree, &cachedTrees, pageID);
+		}
+		// TRY disc
+		else
+		{
+				if (storedTrees.deserializeObject(pageID, liveTree))
+				{
+					// Added to cache
+					cachedTrees.load(liveTree, pageID);
+					tree = cachedTrees.get(pageID);
+					return RAIIhandler<B_Tree>(tree, &cachedTrees, pageID);
+				}
+				else
+				{
+					// DO not exist
+					return RAIIhandler<B_Tree>(nullptr, &cachedTrees, pageID);
+				}
+			
+		}
+	}
 
 	//// store node in disc form cache, mark it as clean.
-	//static void storeTree(int pageID)
-	//{
-	//	BTreeNode* node{};
-	//	node = cachedNodes.get(pageID);
+	static void storeTree(int pageID)
+	{
+		B_Tree* tree{};
+		tree = cachedTrees.get(pageID);
 
-	//	if (node != nullptr)
-	//	{
-	//		storedNodes.modifyPage(pageID, *node);
-	//		cachedNodes.markClean(pageID);
-	//	}
-	//}
+		if (tree != nullptr)
+		{
+			storedTrees.modifyPage(pageID, *tree);
+			cachedTrees.markClean(pageID);
+		}
+	}
 
 	//// Remove node from cache and disc, if it exists.
-	//static void removeTree(int pageID);
+	static void removeTree(int pageID);
 
 	//// Creates page in sorage and then put it in cache.
-	//static int createTree(B_Tree& tree)
-	//{
-	//	int pageID = storedNodes.createPage(node);
-	//	cachedNodes.insert(node, pageID);
+	static int createTree(B_Tree& tree)
+	{
+		int pageID = storedTrees.createPage(tree);
+		cachedTrees.insert(tree, pageID);
 
-	//	return pageID;
-	//}
+		return pageID;
+	}
+
+	static void clearCache()
+	{
+		cachedNodes.clear();
+		cachedTrees.clear();
+	}
+
+	static void flushAll()
+	{
+		std::vector<int> dirtyNodes{ cachedNodes.getDirtyPages() };
+		std::vector<int> dirtyTrees{ cachedTrees.getDirtyPages() };
+
+		// save nodes
+
+		for (int id : dirtyNodes)
+		{
+			storeNode(id);
+		}
+
+		for (int id : dirtyTrees)
+		{
+			storeTree(id);
+		}
+	}
 };

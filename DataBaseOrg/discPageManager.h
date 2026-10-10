@@ -55,7 +55,7 @@ public:
 	}
 	virtual B_Tree deserialize(const std::vector<char>& data, int pageSize)
 	{
-		int rootNodeId, n, t, type;
+		int rootNodeId, t, type;
 
 		std::memcpy(&rootNodeId, data.data(), sizeof(int));
 		std::memcpy(&t, data.data() + sizeof(int), sizeof(int));
@@ -250,17 +250,23 @@ class discPageManager
 	// Read the page with the given pageID, if the page does not exist, return an empty vector
 	std::vector<char> readPage(int pageID)
 	{
-		std::vector<char> buffer(pageSize);
-		fileManager.seekg(static_cast<std::streamoff>(pageID) * pageSize + offset,std::ios::beg);
+		if (pageID < 0) return {};
 
-		// buffer.data() daj wszystko co jest w vector
-		fileManager.read(buffer.data(), pageSize);
+		std::vector<char> buffer(pageSize);
+
+		fileManager.clear();
+		fileManager.seekg(
+			static_cast<std::streamoff>(pageID) * pageSize + offset,
+			std::ios::beg
+		);
+
+		if (!fileManager.read(buffer.data(), pageSize))
+			return {};
 
 		return buffer;
 	}
 
 public:
-	
 	// Initialize the discPageManager with the given serializerRule, this will set the position and offset to 0
 	discPageManager(Serializer<T> *serializer, std::string path , int off) : serializer(serializer), pageSize(off)
 	{
