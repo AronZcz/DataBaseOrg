@@ -1,9 +1,12 @@
 #pragma once
 
+#include <iostream>
 #include <vector>
 #include "cachePageManager.h"
 #include "discPageManager.h"
 #include "B_Tree.h"
+#include "Column.h"
+#include "Table.h"
 
 
 // First look up in cache then in disc, if not found return nullptr
@@ -11,12 +14,11 @@
 // Adding first occurs in disc then in cache because id must be given by disc manager.
 
 // LATER if id exceeds max id then new file must be created with new menager to that file
-
-
 static class pageManager
 {
 	static inline SerializerBTreeNode bTreeNodeSerializer {};
-	static inline  SerializerBTree bTreeSerializer {};
+	static inline SerializerBTree bTreeSerializer {};
+	static inline SerializerColumn columnSerializer{};
 
 	static inline cachePageManager<BTreeNode> cachedNodes{};
 	static inline discPageManager<BTreeNode> storedNodes{ discPageManager<BTreeNode>(&bTreeNodeSerializer, "SerializedNodes.bin", 4096) };
@@ -24,16 +26,14 @@ static class pageManager
 	static inline cachePageManager<B_Tree> cachedTrees{};
 	static inline discPageManager<B_Tree> storedTrees{ discPageManager<B_Tree>(&bTreeSerializer, "SerializedTrees.bin", 4096) };
 
+	static inline cachePageManager<Column> cachedColumns{};
+	static inline discPageManager<Column> storedColumns{ discPageManager<Column>(&columnSerializer, "SerializedColumns.bin", 4096) };
+
 	// Later saving metadata about databases, settings, etc. can be added here
 
+	// Later change to four funcs that can distinguish where what goes
 
 public:
-	static void init()
-	{
-		
-	}
-
-	
 	// NODES // 
 
 	// Get node from cache or disc, if not found return nullptr.
@@ -54,7 +54,7 @@ public:
 			if(storedNodes.deserializeObject(pageID, liveNode))
 			{
 				// Added to cache
-				cachedNodes.insert(liveNode, pageID);
+				cachedNodes.load(liveNode, pageID);
 				node = cachedNodes.get(pageID);
 				return RAIIhandler<BTreeNode>(node, &cachedNodes, pageID);
 			}else
@@ -93,58 +93,140 @@ public:
 	
 	// TREES // 
 
-	// Get node from cache or disc, if not found return nullptr.
-	//static RAIIhandler<B_Tree> getTree(int pageID)
-	//{
-	//	BTreeNode* node;
-	//	BTreeNode liveNode;
-	//	// CHECK cache
-	//	node = cachedNodes.get(pageID);
-	//	if (node != nullptr)
-	//	{
-	//		// IS in cache
-	//		return RAIIhandler<BTreeNode>(node, &cachedNodes, pageID);
-	//	}
-	//	// TRY disc
-	//	else
-	//	{
-	//		if (storedNodes.deserializeObject(pageID, liveNode))
-	//		{
-	//			// Added to cache
-	//			cachedNodes.insert(liveNode, pageID);
-	//			node = cachedNodes.get(pageID);
-	//			return RAIIhandler<BTreeNode>(node, &cachedNodes, pageID);
-	//		}
-	//		else
-	//		{
-	//			// DO not exist
-	//			return RAIIhandler<BTreeNode>(nullptr, &cachedNodes, pageID);
-	//		}
-	//	}
-	//}
+	//Get tree from cache or disc, if not found return nullptr.
+	static RAIIhandler<B_Tree> getTree(int pageID)
+	{
+		B_Tree* tree {nullptr};
+		B_Tree liveTree;
+		// CHECK cache
+		tree = cachedTrees.get(pageID);
+		if (tree != nullptr)
+		{
+			// IS in cache
+			return RAIIhandler<B_Tree>(tree, &cachedTrees, pageID);
+		}
+		// TRY disc
+		else
+		{
+				if (storedTrees.deserializeObject(pageID, liveTree))
+				{
+					// Added to cache
+					cachedTrees.load(liveTree, pageID);
+					tree = cachedTrees.get(pageID);
+					return RAIIhandler<B_Tree>(tree, &cachedTrees, pageID);
+				}
+				else
+				{
+					// DO not exist
+					return RAIIhandler<B_Tree>(nullptr, &cachedTrees, pageID);
+				}
+			
+		}
+	}
 
 	//// store node in disc form cache, mark it as clean.
-	//static void storeTree(int pageID)
-	//{
-	//	BTreeNode* node{};
-	//	node = cachedNodes.get(pageID);
+	static void storeTree(int pageID)
+	{
+		B_Tree* tree{};
+		tree = cachedTrees.get(pageID);
 
-	//	if (node != nullptr)
-	//	{
-	//		storedNodes.modifyPage(pageID, *node);
-	//		cachedNodes.markClean(pageID);
-	//	}
-	//}
+		if (tree != nullptr)
+		{
+			storedTrees.modifyPage(pageID, *tree);
+			cachedTrees.markClean(pageID);
+		}
+	}
 
 	//// Remove node from cache and disc, if it exists.
-	//static void removeTree(int pageID);
+	static void removeTree(int pageID);
 
 	//// Creates page in sorage and then put it in cache.
-	//static int createTree(B_Tree& tree)
-	//{
-	//	int pageID = storedNodes.createPage(node);
-	//	cachedNodes.insert(node, pageID);
+	static int createTree(B_Tree& tree)
+	{
+		int pageID = storedTrees.createPage(tree);
+		cachedTrees.insert(tree, pageID);
 
-	//	return pageID;
-	//}
+		return pageID;
+	}
+
+
+	// COLUMNS //
+
+	static RAIIhandler<Column> getColumn(int pageID)
+	{
+		Column* column{ nullptr };
+		Column liveColumn;
+		// CHECK cache
+		column = cachedColumns.get(pageID);
+		if (column != nullptr)
+		{
+			// IS in cache
+			return RAIIhandler<Column>(column, &cachedColumns, pageID);
+		}
+		// TRY disc
+		else
+		{
+			if (storedColumns.deserializeObject(pageID, liveColumn))
+			{
+				// Added to cache
+				cachedColumns.load(liveColumn, pageID);
+				column = cachedColumns.get(pageID);
+				return RAIIhandler<Column>(column, &cachedColumns, pageID);
+			}
+			else
+			{
+				// DO not exist
+				return RAIIhandler<Column>(nullptr, &cachedColumns, pageID);
+			}
+		}
+	}
+
+	static void storeColumn(int pageID)
+	{
+		Column* column{};
+		column = cachedColumns.get(pageID);
+
+		if (column != nullptr)
+		{
+			storedColumns.modifyPage(pageID, *column);
+			cachedColumns.markClean(pageID);
+		}
+	}
+
+	static void removeColumn(int pageID);
+
+	static int createColumn(Column& col)
+	{
+		int pageID = storedColumns.createPage(col);
+		cachedColumns.insert(col, pageID);
+
+		return pageID;
+	}
+
+
+	// 
+
+	static void clearCache()
+	{
+		cachedNodes.clear();
+		cachedTrees.clear();
+	}
+
+	static void flushAll()
+	{
+		std::vector<int> dirtyNodes{ cachedNodes.getDirtyPages() };
+		std::vector<int> dirtyTrees{ cachedTrees.getDirtyPages() };
+
+		// save nodes
+
+		for (int id : dirtyNodes)
+		{
+			storeNode(id);
+		}
+
+		for (int id : dirtyTrees)
+		{
+			storeTree(id);
+		}
+	}
 };

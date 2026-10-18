@@ -5,7 +5,6 @@
 #include <vector>
 
 
-// integers for special: 0 = NULL, 1 = NaN, 2 = Infinity, 3 = -Infinity
 
 enum class DataType
 {
@@ -14,14 +13,14 @@ enum class DataType
     Double,
     String,
     Boolean,
-    Special,
+    Null,
 };
 
 
-using Value = std::variant<std::int64_t, float, double, std::string, bool>;
+using Value = std::variant < std::int64_t, float, double, std::string, bool, std::monostate >;
 
 
-static class  Values
+static class Values
 {
 public:
     //  0, a == b
@@ -32,5 +31,6 @@ public:
     static int miniCompare(T a, T b);
 
     static int8_t compare(const Value a, const Value b, DataType type);
-};
 
+    static bool isNull(const Value a);  
+};

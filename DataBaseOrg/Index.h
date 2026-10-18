@@ -17,6 +17,15 @@ struct Label
     DataType type;
     Value val;
     std::vector<int> tableIndex;
+
+    void setVal(Value newVal)
+    {
+        if(Values::isNull(newVal))
+        {
+            type = DataType::Null;
+        }
+        val = std::move(newVal);
+    }
 };
 
 class IndexInterface

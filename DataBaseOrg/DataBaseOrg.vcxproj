@@ -129,17 +129,22 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="B_Tree.cpp" />
+    <ClCompile Include="Column.cpp" />
     <ClCompile Include="DataBaseOrg.cpp" />
     <ClCompile Include="Index.cpp" />
+    <ClCompile Include="Table.cpp" />
     <ClCompile Include="Values.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="B_Tree.h" />
     <ClInclude Include="cachePageManager.h" />
     <ClInclude Include="checkPCSpecs.h" />
+    <ClInclude Include="Column.h" />
+    <ClInclude Include="DataBase.h" />
     <ClInclude Include="discPageManager.h" />
     <ClInclude Include="Index.h" />
     <ClInclude Include="pageManager.h" />
+    <ClInclude Include="Table.h" />
     <ClInclude Include="Values.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

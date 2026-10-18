@@ -35,12 +35,14 @@ public:
     int rootNodeId;
 
     B_Tree(DataType, int , int = -1);  //IMP
+
+    B_Tree(){}
     
     void insert(const Value& key, int rowID) override;  //IMP
 
-    void insertNonFull(BTreeNode& node, const Value& key, int rowID);   //IMP HERE
+    void insertNonFull(int nodeID, const Value& key, int rowID);   //IMP HERE
 
-    void splitChild(BTreeNode& parent, std::size_t childIndex); //IMP  HERE
+    void splitChild(int parentID, std::size_t childIndex); //IMP  HERE
 
     std::vector<int> retrieve(const Value& key) const override; //IMP
 

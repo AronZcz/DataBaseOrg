@@ -1,6 +1,7 @@
 #pragma once
 #include "Values.h"
 #include "B_Tree.h"
+#include "Table.h"
 #include <vector>
 #include <string>
 #include <stdexcept>
@@ -55,7 +56,7 @@ public:
 	}
 	virtual B_Tree deserialize(const std::vector<char>& data, int pageSize)
 	{
-		int rootNodeId, n, t, type;
+		int rootNodeId, t, type;
 
 		std::memcpy(&rootNodeId, data.data(), sizeof(int));
 		std::memcpy(&t, data.data() + sizeof(int), sizeof(int));
@@ -87,9 +88,32 @@ public:
 			std::memcpy(data.data() + pos, &rowID, sizeof(rowID));
 			pos += sizeof(rowID);
 		}
+		// Special case for string and null
 
-		std::int64_t value = std::get<std::int64_t>(obj.val);
-		std::memcpy(data.data() + pos, &value, sizeof(value));
+		if(obj.type == DataType::String)
+		{
+			std::string tmp = std::get<std::string>(obj.val);
+			int length = tmp.length();
+
+			std::memcpy(data.data() + pos, &length, sizeof(length));
+			pos += sizeof(length);
+
+			for (char c : tmp)
+			{
+				std::memcpy(data.data() + pos, &c, sizeof(c));
+				pos += sizeof(c);
+			}
+		}
+		else if(obj.type == DataType::Null || Values::isNull(obj.val))
+		{
+			bool value = Values::isNull(obj.val);
+		}
+		else
+		{
+			std::int64_t value = std::get<std::int64_t>(obj.val);
+			std::memcpy(data.data() + pos, &value, sizeof(value));
+		}
+
 
 		return data;
 	}
@@ -119,9 +143,83 @@ public:
 			result.tableIndex.push_back(rowID);
 		}
 
-		std::int64_t value;
-		std::memcpy(&value, data.data() + pos, sizeof(value));
-		result.val = value;
+		// Special case for string
+		if (result.type == DataType::String)
+		{
+			std::string tmp {};
+			int length;
+			char c;
+
+			std::memcpy(&length, data.data() + pos, sizeof(length));
+			pos += sizeof(length);
+
+			for (int i = 0; i < length; ++i)
+			{
+				char c;
+				std::memcpy(&c, data.data() + pos, sizeof(char));
+				pos += sizeof(c);
+				tmp += c;
+			}
+
+			result.setVal(tmp);
+		}
+		else if (result.type == DataType::Null)
+		{
+			std::monostate value;
+			result.setVal(value);
+		}
+		else
+		{
+			std::int64_t value;
+			std::memcpy(&value, data.data() + pos, sizeof(value));
+			result.setVal(value);
+		}
+
+		return result;
+	}
+};
+
+class SerializerColumn : public Serializer<Column> 
+{
+public:
+	SerializerColumn(){}
+
+	std::vector<char> serialize(const Column& obj, int pageSize) override
+	{
+		std::vector<char> data(pageSize, '\0');
+		std::size_t pos = 0;
+
+		int usedTreeID = static_cast<int>(obj.usedTreeID);
+		std::int8_t metadata = static_cast<std::int8_t>(obj.metaData.flag);
+
+		std::memcpy(data.data() + pos, &usedTreeID, sizeof(usedTreeID));
+		pos += sizeof(usedTreeID);
+
+		std::memcpy(data.data() + pos, &metadata, sizeof(metadata));
+		pos += sizeof(metadata);
+
+		return data;
+	}
+
+	Column deserialize(const std::vector<char>& data, int pageSize) override 
+	{
+		Column result;
+		std::size_t pos = 0;
+
+		int usedTreeID = {};
+		std::int8_t metadataFlag = {};
+
+
+		std::memcpy(&usedTreeID, data.data() + pos, sizeof(usedTreeID));
+		pos += sizeof(usedTreeID);
+
+		std::memcpy(&metadataFlag, data.data() + pos, sizeof(metadataFlag));
+		pos += sizeof(metadataFlag);
+
+		columnMetadata metadata;
+		metadata.flag = metadataFlag;
+
+		result = Column(usedTreeID, metadata);
 
 		return result;
 	}
@@ -160,10 +258,36 @@ public:
 
 		for (const Label& key : obj.keys)
 		{
+			int valueSize;
+
+			if (key.type == DataType::String)
+			{
+				// SerializerLabel zapisuje: int length + bajty tekstu
+				valueSize =
+					static_cast<int>(sizeof(int)) +
+					static_cast<int>(
+						std::get<std::string>(key.val).size()
+						);
+			}
+			else if (key.type == DataType::Null)
+			{
+				valueSize = 0;
+			}
+			else if (key.type == DataType::Int)
+			{
+				valueSize = static_cast<int>(sizeof(std::int64_t));
+			}
+			else
+			{
+				throw std::invalid_argument(
+					"Nieobslugiwany typ Label"
+				);
+			}
+
 			int labelSize =
-				2 * sizeof(int) +
-				static_cast<int>(key.tableIndex.size()) * sizeof(int) +
-				sizeof(std::int64_t);
+				static_cast<int>(2 * sizeof(int)) +
+				static_cast<int>(key.tableIndex.size() * sizeof(int)) +
+				valueSize;
 
 			std::vector<char> labelData =
 				labelSerializer.serialize(key, labelSize);
@@ -193,6 +317,7 @@ public:
 	{
 		BTreeNode result{};
 		result.PageID = -1;
+
 		std::size_t pos = 0;
 
 		int leaf;
@@ -209,6 +334,7 @@ public:
 			int childID;
 			std::memcpy(&childID, data.data() + pos, sizeof(childID));
 			pos += sizeof(childID);
+
 			result.ChildrensId.push_back(childID);
 		}
 
@@ -237,6 +363,9 @@ public:
 	}
 };
 
+class SerializeTable : public Serializer<Table>
+{};
+
 template <typename T>
 class discPageManager
 {
@@ -250,17 +379,23 @@ class discPageManager
 	// Read the page with the given pageID, if the page does not exist, return an empty vector
 	std::vector<char> readPage(int pageID)
 	{
-		std::vector<char> buffer(pageSize);
-		fileManager.seekg(static_cast<std::streamoff>(pageID) * pageSize + offset,std::ios::beg);
+		if (pageID < 0) return {};
 
-		// buffer.data() daj wszystko co jest w vector
-		fileManager.read(buffer.data(), pageSize);
+		std::vector<char> buffer(pageSize);
+
+		fileManager.clear();
+		fileManager.seekg(
+			static_cast<std::streamoff>(pageID) * pageSize + offset,
+			std::ios::beg
+		);
+
+		if (!fileManager.read(buffer.data(), pageSize))
+			return {};
 
 		return buffer;
 	}
 
 public:
-	
 	// Initialize the discPageManager with the given serializerRule, this will set the position and offset to 0
 	discPageManager(Serializer<T> *serializer, std::string path , int off) : serializer(serializer), pageSize(off)
 	{

@@ -12,6 +12,13 @@ static int Values::miniCompare(T a, T b)
 
 int8_t Values::compare(const Value a, const Value b, DataType type)
 {
+    bool aNull = std::holds_alternative<std::monostate>(a);
+    bool bNull = std::holds_alternative<std::monostate>(b);
+
+    if (aNull && bNull) return 0;
+    if (aNull) return -1;
+    if (bNull) return 1;
+
     switch (type)
     {
     case DataType::Int:
@@ -28,4 +35,9 @@ int8_t Values::compare(const Value a, const Value b, DataType type)
         return 2;
         break;
     }
+}
+
+bool Values::isNull(const Value v)
+{
+    return std::holds_alternative<std::monostate>(v);
 }

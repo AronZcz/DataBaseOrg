@@ -1,73 +1,44 @@
 ﻿#include <iostream>
-#include "Values.h"
+#include <stdexcept>
+#include <string>
+#include <vector>
+
 #include "B_Tree.h"
 #include "pageManager.h"
+#include "discPageManager.h"
+#include "Table.h"
 
 
 
 int main()
 {
-    pageManager::init();
+    rowFormat_t rowFormat;
 
-    B_Tree tree = B_Tree(DataType::Int, 4, -1);
-    IndexInterface* index = &tree;
-    
-    // INSERT
-    index->insert(Value{ int64_t{10} }, 1);
-    index->insert(Value{ int64_t{20} }, 2);
-    //index->insert(Value{ int64_t{20} }, 100);
-    index->insert(Value{ int64_t{30} }, 3);
-    index->insert(Value{ int64_t{40} }, 4);
-    index->insert(Value{ int64_t{50} }, 5);
+    rowFormat["Name"] = DataType::String;
+    rowFormat["Age"] = DataType::Int;
 
-    // Duplikaty tej samej wartości
-    index->insert(Value{ int64_t{20} }, 6);
-    index->insert(Value{ int64_t{20} }, 7);
+    std::vector<std::string> names = std::vector<std::string>({ "Name", "Age" });
 
-    // Usinięcie 
+    metadataFormat_t metadataFormat;
+    metadataFormat["Name"].setFlag(columnFlag::NOT_NULL);
+    metadataFormat["Age"].setFlag(columnFlag::NOT_NULL);
 
-    index->remove(Value{ int64_t{20} }, 2);
+    Table table = Table(names, rowFormat, metadataFormat);
 
-    index->edit(Value{ int64_t{10} }, Value{ int64_t{20} }, 1);
+    insertionData nameVal;
+    nameVal.dType = DataType::String;
+    nameVal.name = "Name";
+    nameVal.v = "Aron";
 
-    // RETRIEVE
-    std::vector<int> result = index->retrieve(Value{ int64_t{20} });
+    insertionData ageVal;
+    ageVal.dType = DataType::Int;
+    ageVal.name = "Age";
+    ageVal.v = 23;
 
-    std::cout << "Rows for value 20:\n";
 
-    for (int rowID : result)
-    {
-        std::cout << rowID << "\n";
-    }
+    std::vector<insertionData> newRow;
+    newRow.push_back(nameVal);
+    newRow.push_back(ageVal);
 
-    // Test nieistniejącej wartości
-    std::vector<int> missing = index->retrieve(Value{ int64_t{999} });
-
-    std::cout << "\nRows with value 999: "
-        << missing.size() << "\n";
-
-    //// Test cache
-    //cachePageManager<int> cacheManager;
-    //cacheManager.insert(890, 1);
-    //cacheManager.markClean(1);
-
-    //
-    //{
-    //    auto handler = cacheManager.get(1);
-    //    std::cout << handler.get() << '\n';
-    //    std::cout << cacheManager.remove(1) << '\n'; // 0: strona przypięta
-    //}
-
-    //std::cout << cacheManager.remove(1);
-
-    //// Test disc
-
-    //Serializer<int>* serializer = new SerializerInt();
-    //discPageManager<int> discManager(serializer,"C:\\Users\\Aron\\source\\repos\\DataBaseOrg\\x64\\Debug\\testfile.dat", 0);
-
-    //int obj = discManager.deserializeObject(2);
-
-    //std::cout << "\n\nDeserialized object: " << obj << std::endl;
-
-    return 0;
+    table.pushDataRow(newRow);
 }

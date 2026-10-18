@@ -1,6 +1,7 @@
 ﻿#include "B_Tree.h"
 #include <stdexcept>
 #include "pageManager.h"
+#include <iostream>
 
 
 B_Tree::B_Tree(DataType type, int degree, int rootNodeId)
@@ -23,9 +24,9 @@ void B_Tree::insert(const Value& key, int rowID)
         root.leaf = true;
 
         Label l;
-        l.val = key;
-        l.tableIndex.push_back(rowID);
         l.type = this->type;
+        l.setVal(key);
+        l.tableIndex.push_back(rowID);
 
         root.keys.push_back(l);
 
@@ -50,33 +51,50 @@ void B_Tree::insert(const Value& key, int rowID)
 
 
         newRoot.ChildrensId.push_back(rootNodeId);
-        splitChild(newRoot, 0);
 
         rootNodeId = pageManager::createNode(newRoot);
         auto rootHandler = pageManager::getNode(rootNodeId);
         BTreeNode& root = rootHandler.get();
 
+
+        splitChild(rootNodeId, 0);
+
+        
+
         // Wstaw Label
-        insertNonFull(root, key, rowID);
+        insertNonFull(rootNodeId, key, rowID);
     }
     else
     {
         // niepełny root
         // niepełny root → insertNonFull(root, key, rowID)
-        insertNonFull(root, key, rowID);
+        insertNonFull(rootNodeId, key, rowID);
     }
 }
 
-void B_Tree::insertNonFull(BTreeNode& node, const Value& key, int rowID)
+void B_Tree::insertNonFull(int nodeID, const Value& key, int rowID)
 {
     // Sprawdz czy jest miejsce 
+
+    auto nodeHandler = pageManager::getNode(nodeID);
+    BTreeNode& node = nodeHandler.get();
+
     if (!node.keys.empty())
     {
         for (Label& l : node.keys)
         {
             if (Values::compare(l.val, key, this->type) == 0)
             {
-                l.tableIndex.push_back(rowID);
+                for(int& row : l.tableIndex)
+                {
+                    // No duplicates
+                    if(row == rowID)
+                    {
+                        return;
+                    }
+                }
+
+                l.tableIndex.push_back(rowID);             
                 return;
             }
         }
@@ -86,9 +104,10 @@ void B_Tree::insertNonFull(BTreeNode& node, const Value& key, int rowID)
     {
         // Jeśli nie dodaj nowy label
         Label lt;
-        lt.val = key;
-        lt.tableIndex.push_back(rowID);
         lt.type = this->type;
+        lt.setVal(key);
+        lt.tableIndex.push_back(rowID);
+        
 
         for (size_t i{ 0 }; i < node.keys.size(); i++)
         {
@@ -105,7 +124,6 @@ void B_Tree::insertNonFull(BTreeNode& node, const Value& key, int rowID)
     }
     else
     {
-        decideAgain:
         // 1. znajdź indeks dziecka, do którego trzeba zejść
         size_t childIndex = node.keys.size();
 
@@ -118,30 +136,45 @@ void B_Tree::insertNonFull(BTreeNode& node, const Value& key, int rowID)
             }
         }
 
+
+
         // 2. sprawdź czy to dziecko jest pełne
 
         auto childHandler = pageManager::getNode(node.ChildrensId[childIndex]);
         BTreeNode &child = childHandler.get();
 
 
-        if(child.keys.size() >= this->n)
+        if (child.keys.size() >= this->n)
         {
-            // 3. jeśli pełne -> splitChild(node, index)
-            splitChild(node, childIndex);
+            splitChild(nodeID, childIndex);
 
-            // 4. po splicie jeszcze raz zdecyduj,
-            //   czy iść do lewego czy prawego dziecka 
-            goto decideAgain;
+            const int cmp = Values::compare(key, node.keys[childIndex].val, type);
+
+            if (cmp == 0)
+            {
+                auto& rows = node.keys[childIndex].tableIndex;
+
+                for (int id : rows)
+                    if (id == rowID)
+                        return;
+
+                rows.push_back(rowID);
+                return;
+            }
+
+            if (cmp > 0)
+                ++childIndex;
         }
-        
-        // 5. wywołaj rekurencyjnie insertNonFull(...)
 
-        insertNonFull(child, key, rowID);
+        insertNonFull(node.ChildrensId[childIndex], key, rowID);
     }
 }
 
-void B_Tree::splitChild(BTreeNode& parent, std::size_t childIndex)
+void B_Tree::splitChild(int parentID, std::size_t childIndex)
 {
+    auto parentHandler = pageManager::getNode(parentID);
+    BTreeNode& parent = parentHandler.get();
+
     auto childHandler = pageManager::getNode(parent.ChildrensId[childIndex]);
     BTreeNode& child = childHandler.get();
     // wybrać środkowy Label,
@@ -275,7 +308,7 @@ bool B_Tree::remove(const Value& key, int rowID)
     while (true)
     {
         auto heldNodeHandler = pageManager::getNode(heldNodeID);
-        BTreeNode heldNode = heldNodeHandler.read();
+        BTreeNode& heldNode = heldNodeHandler.get();
 
 
         size_t childIndex = heldNode.keys.size();
@@ -293,6 +326,10 @@ bool B_Tree::remove(const Value& key, int rowID)
                         heldNode.keys[i].tableIndex.erase(
                             heldNode.keys[i].tableIndex.begin() + j
                         );
+
+                        // Save change
+                        pageManager::storeNode(heldNodeID);
+                        
 
                         return true;
                     }
@@ -324,7 +361,7 @@ std::vector<int> B_Tree::removeByVal(const Value& key)
     while (true)
     {
         auto heldNodeHandler = pageManager::getNode(heldNodeID);
-        BTreeNode heldNode = heldNodeHandler.read();
+        BTreeNode& heldNode = heldNodeHandler.get();
 
         size_t childIndex = heldNode.keys.size();
 
@@ -337,6 +374,8 @@ std::vector<int> B_Tree::removeByVal(const Value& key)
                 std::vector<int> tmp = std::move(heldNode.keys[i].tableIndex);
                 heldNode.keys[i].tableIndex.clear();
 
+                // Save change
+                pageManager::storeNode(heldNodeID);
                 return tmp;
             }
 
