@@ -2,7 +2,7 @@
 #include <vector>
 #include "Values.h"
 #include "Index.h"
-
+#include <unordered_map>
 
 /*
 	DESCRIPTION
@@ -11,7 +11,6 @@
 	Podstawowy algorytm indeksowania
 */
 
-
 struct BTreeNode {
     int PageID;
     std::vector<Label> keys;
@@ -19,8 +18,7 @@ struct BTreeNode {
     bool leaf{ false };
 };
 
-
-
+typedef std::unordered_map<int, Value> allData_t;
 
 class B_Tree : public IndexInterface
 {
@@ -51,6 +49,8 @@ public:
     std::vector<int> removeByVal(const Value& key) override; //IMP
 
     bool edit(const Value& oldVal, const Value& newVal, int rowID) override;    //NIMP
+
+    allData_t getAllData() const override;
 
     void clear() override;  //NIMP
 

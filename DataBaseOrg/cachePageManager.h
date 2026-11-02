@@ -249,6 +249,14 @@ public:
 		return ids;
 	}
 
+	void forceRemove(int pageID)
+	{
+		if(cacheMap.contains(pageID))
+		{
+			cacheMap.erase(pageID);
+		}
+	}
+
 	// Throws BIG errors
 	void clear()
 	{

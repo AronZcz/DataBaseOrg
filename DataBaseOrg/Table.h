@@ -1,15 +1,12 @@
 #pragma once
 #include "Column.h"
 #include <unordered_map>
+#include "Relation.h"
 
 // For assigning dType to names
 typedef std::unordered_map<std::string, DataType> rowFormat_t;
 // For assigning names to metadata goes to column
 typedef std::unordered_map<std::string, columnMetadata> metadataFormat_t;
-// Builderd row for result
-typedef std::unordered_map<int, std::vector<Value>> Row_t;
-// Result array
-typedef std::unordered_map <std::string, std::vector<Row_t>> resultArray_t;
 
 
 // 1. TABLE is input and output for relational algebra 
@@ -31,6 +28,8 @@ typedef std::unordered_map<std::string, int> columnsID_t;
 
 class Table
 {
+	friend class SerializerTable;
+
 	rowFormat_t rowFormat;
 	std::vector<std::string> names;
 	columnsID_t columnsIDs;
@@ -39,6 +38,8 @@ class Table
 	int nextID{};
 
 public:
+	// 
+	Table();
 	// Creating new Table
 	Table(std::vector<std::string> names, rowFormat_t rowFormat, metadataFormat_t metadataFormat);
 
@@ -63,8 +64,8 @@ public:
 	// ALTER TABLE oper More complicated tha that need casting
 	void changeColumnType(std::string name, DataType);
 
+	Relation getRelation();
+
 	// Check for rows that are empty and shrink nextID;
 	void defragmentation();
-
-
 };

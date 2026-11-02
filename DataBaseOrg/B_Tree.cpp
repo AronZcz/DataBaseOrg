@@ -30,11 +30,11 @@ void B_Tree::insert(const Value& key, int rowID)
 
         root.keys.push_back(l);
 
-        rootNodeId = pageManager::createNode(root);
+        rootNodeId = pageManager::create(root);
         return;
     }
 
-    auto rootHandler = pageManager::getNode(rootNodeId);
+    auto rootHandler = pageManager::get<BTreeNode>(rootNodeId);
     BTreeNode &root = rootHandler.get();
 
     // niepełnego roota,
@@ -52,8 +52,8 @@ void B_Tree::insert(const Value& key, int rowID)
 
         newRoot.ChildrensId.push_back(rootNodeId);
 
-        rootNodeId = pageManager::createNode(newRoot);
-        auto rootHandler = pageManager::getNode(rootNodeId);
+        rootNodeId = pageManager::create(newRoot);
+        auto rootHandler = pageManager::get<BTreeNode>(rootNodeId);
         BTreeNode& root = rootHandler.get();
 
 
@@ -76,7 +76,7 @@ void B_Tree::insertNonFull(int nodeID, const Value& key, int rowID)
 {
     // Sprawdz czy jest miejsce 
 
-    auto nodeHandler = pageManager::getNode(nodeID);
+    auto nodeHandler = pageManager::get<BTreeNode>(nodeID);
     BTreeNode& node = nodeHandler.get();
 
     if (!node.keys.empty())
@@ -140,7 +140,7 @@ void B_Tree::insertNonFull(int nodeID, const Value& key, int rowID)
 
         // 2. sprawdź czy to dziecko jest pełne
 
-        auto childHandler = pageManager::getNode(node.ChildrensId[childIndex]);
+        auto childHandler = pageManager::get<BTreeNode>(node.ChildrensId[childIndex]);
         BTreeNode &child = childHandler.get();
 
 
@@ -172,10 +172,10 @@ void B_Tree::insertNonFull(int nodeID, const Value& key, int rowID)
 
 void B_Tree::splitChild(int parentID, std::size_t childIndex)
 {
-    auto parentHandler = pageManager::getNode(parentID);
+    auto parentHandler = pageManager::get<BTreeNode>(parentID);
     BTreeNode& parent = parentHandler.get();
 
-    auto childHandler = pageManager::getNode(parent.ChildrensId[childIndex]);
+    auto childHandler = pageManager::get<BTreeNode>(parent.ChildrensId[childIndex]);
     BTreeNode& child = childHandler.get();
     // wybrać środkowy Label,
     int midPoint = child.keys.size() / 2;
@@ -253,7 +253,7 @@ void B_Tree::splitChild(int parentID, std::size_t childIndex)
 
     // wstawić nowego childa do parent.Children zaraz za starym childem.
 
-    int newNodeID = pageManager::createNode(newNode);
+    int newNodeID = pageManager::create(newNode);
 
 
     parent.ChildrensId.insert(
@@ -270,7 +270,7 @@ std::vector<int> B_Tree::retrieve(const Value& key) const
 
     while (true)
     {
-        auto heldNodeHandler = pageManager::getNode(heldNodeID);
+        auto heldNodeHandler = pageManager::get<BTreeNode>(heldNodeID);
         BTreeNode heldNode = heldNodeHandler.read();
 
         size_t childIndex = heldNode.keys.size();
@@ -307,7 +307,7 @@ bool B_Tree::remove(const Value& key, int rowID)
 
     while (true)
     {
-        auto heldNodeHandler = pageManager::getNode(heldNodeID);
+        auto heldNodeHandler = pageManager::get<BTreeNode>(heldNodeID);
         BTreeNode& heldNode = heldNodeHandler.get();
 
 
@@ -328,7 +328,7 @@ bool B_Tree::remove(const Value& key, int rowID)
                         );
 
                         // Save change
-                        pageManager::storeNode(heldNodeID);
+                        pageManager::store<BTreeNode>(heldNodeID);
                         
 
                         return true;
@@ -360,7 +360,7 @@ std::vector<int> B_Tree::removeByVal(const Value& key)
 
     while (true)
     {
-        auto heldNodeHandler = pageManager::getNode(heldNodeID);
+        auto heldNodeHandler = pageManager::get<BTreeNode>(heldNodeID);
         BTreeNode& heldNode = heldNodeHandler.get();
 
         size_t childIndex = heldNode.keys.size();
@@ -375,7 +375,7 @@ std::vector<int> B_Tree::removeByVal(const Value& key)
                 heldNode.keys[i].tableIndex.clear();
 
                 // Save change
-                pageManager::storeNode(heldNodeID);
+                pageManager::store<BTreeNode>(heldNodeID);
                 return tmp;
             }
 
@@ -406,5 +406,42 @@ bool B_Tree::edit(const Value& oldVal, const Value& newVal, int rowID)
 }
 
 void B_Tree::clear() { throw std::logic_error("not implemented"); };
+
+allData_t B_Tree::getAllData() const
+{
+    allData_t toRet;
+
+    if (rootNodeId == -1)
+        return toRet;
+
+    std::vector<int> pendingNodes{ rootNodeId };
+
+    while (!pendingNodes.empty())
+    {
+        int heldNodeID = pendingNodes.back();
+        pendingNodes.pop_back();
+
+        auto heldNodeHandler = pageManager::get<BTreeNode>(heldNodeID);
+        const BTreeNode& heldNode = heldNodeHandler.read();
+
+        for (const Label& label : heldNode.keys)
+        {
+            for (int rowID : label.tableIndex)
+            {
+                toRet[rowID] = label.val;
+            }
+        }
+
+        if (!heldNode.leaf)
+        {
+            for (int childID : heldNode.ChildrensId)
+            {
+                pendingNodes.push_back(childID);
+            }
+        }
+    }
+
+    return toRet;
+}
 
 std::size_t B_Tree::size() const { throw std::logic_error("not implemented"); };

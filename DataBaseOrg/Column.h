@@ -102,6 +102,10 @@ public:
 
     void dropFlag(columnFlag f);
 
+    Value getValueByRowID(int rowID) const;
+
+    allData_t getAllRecords() const;
+
     // Universal func to call if value that is added matches req
     bool checkFlagReq(Value& v);
 };

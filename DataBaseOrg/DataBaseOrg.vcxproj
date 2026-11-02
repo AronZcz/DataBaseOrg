@@ -130,8 +130,11 @@
   <ItemGroup>
     <ClCompile Include="B_Tree.cpp" />
     <ClCompile Include="Column.cpp" />
+    <ClCompile Include="DataBase.cpp" />
     <ClCompile Include="DataBaseOrg.cpp" />
+    <ClCompile Include="Engine.cpp" />
     <ClCompile Include="Index.cpp" />
+    <ClCompile Include="relationAlgebra.cpp" />
     <ClCompile Include="Table.cpp" />
     <ClCompile Include="Values.cpp" />
   </ItemGroup>
@@ -142,8 +145,12 @@
     <ClInclude Include="Column.h" />
     <ClInclude Include="DataBase.h" />
     <ClInclude Include="discPageManager.h" />
+    <ClInclude Include="Engine.h" />
+    <ClInclude Include="StoredDataBases.h" />
     <ClInclude Include="Index.h" />
     <ClInclude Include="pageManager.h" />
+    <ClInclude Include="Relation.h" />
+    <ClInclude Include="relationAlgebra.h" />
     <ClInclude Include="Table.h" />
     <ClInclude Include="Values.h" />
   </ItemGroup>

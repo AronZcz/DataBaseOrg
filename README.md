@@ -1,5 +1,17 @@
 # DataBaseOrg
 
+## Aktualizacja — 2 listopada 2026
+
+Bieżący zapis projektu rozszerza prototyp o `Engine`, katalog `StoredDataBases`, implementację `DataBase`, `Relation` oraz selekcję i projekcję w `relationAlgebra`. API zawiera tworzenie i wybór bazy, tworzenie tabeli, wstawianie danych oraz `selectAll` i `select`. `pageManager` obsługuje różne typy obiektów i `flushAll`; dodano serializację tabel, baz i katalogu. Repozytorium zawiera również aktualny stan sześciu plików `Serialized*.bin`.
+
+Przykład w `DataBaseOrg.cpp` definiuje dwie tabele po **100 rekordów** i sprawdza filtrowanie do 50 i 20 rekordów oraz zachowanie danych źródłowych. Komentarze i końcowy komunikat o 5000 rekordów są nieaktualne. Obecny zapis nie został w tej aktualizacji skompilowany ani uruchomiony; nie potwierdza trwałości po restarcie.
+
+Znane niedokończone elementy: deklaracja `writerLoop()` nie odpowiada definicji przyjmującej dwa argumenty, a deklaracja `modifyColumn` ma argument z wartością domyślną przed argumentami bez wartości domyślnych. W `select` wywołanie `flushAll` po `return` jest nieosiągalne. Część operacji modyfikacji/usuwania oraz pozostałe operatory algebry mają tylko deklaracje. To zapis bieżącej pracy, a nie zweryfikowane wydanie.
+
+Foldery `.vs`, `x64` i pliki wynikowe kompilacji są pomijane zgodnie z `.gitignore`. Poniższy opis zachowano jako historyczną analizę wcześniejszego prototypu; nie opisuje w pełni aktualnego kodu.
+
+## Historyczna analiza wcześniejszego prototypu
+
 Prototyp silnika bazy danych w C++20. Aktualnie rozwijana część to indeks B-tree współpracujący z pamięcią podręczną i plikiem stron. Projekt nie jest jeszcze kompletnym DBMS: klasy bazy i tabel nie realizują CRUD, a SQL, transakcje i odzyskiwanie po awarii nie są zaimplementowane.
 
 ## Jak działa obecny prototyp

@@ -2,11 +2,13 @@
 
 #include <iostream>
 #include <vector>
+#include <type_traits>
 #include "cachePageManager.h"
 #include "discPageManager.h"
 #include "B_Tree.h"
 #include "Column.h"
 #include "Table.h"
+#include "DataBase.h"
 
 
 // First look up in cache then in disc, if not found return nullptr
@@ -19,214 +21,198 @@ static class pageManager
 	static inline SerializerBTreeNode bTreeNodeSerializer {};
 	static inline SerializerBTree bTreeSerializer {};
 	static inline SerializerColumn columnSerializer{};
+	static inline SerializerTable tableSerializer{};
+	static inline SerializerDataBase databaseSerializer{};
+    static inline SerializerStoredDataBases storedDataBasesSerializer{};
+    static inline cachePageManager<StoredDataBases> cachedDatabaseCatalogs{};
+    static inline discPageManager<StoredDataBases> storedDatabaseCatalogs{
+        &storedDataBasesSerializer, "SerializedDatabaseCatalogs.bin", 256 };
 
 	static inline cachePageManager<BTreeNode> cachedNodes{};
-	static inline discPageManager<BTreeNode> storedNodes{ discPageManager<BTreeNode>(&bTreeNodeSerializer, "SerializedNodes.bin", 4096) };
+	static inline discPageManager<BTreeNode> storedNodes{ discPageManager<BTreeNode>(&bTreeNodeSerializer, "SerializedNodes.bin", 512) };
 
 	static inline cachePageManager<B_Tree> cachedTrees{};
-	static inline discPageManager<B_Tree> storedTrees{ discPageManager<B_Tree>(&bTreeSerializer, "SerializedTrees.bin", 4096) };
+	static inline discPageManager<B_Tree> storedTrees{ discPageManager<B_Tree>(&bTreeSerializer, "SerializedTrees.bin", 512) };
 
 	static inline cachePageManager<Column> cachedColumns{};
-	static inline discPageManager<Column> storedColumns{ discPageManager<Column>(&columnSerializer, "SerializedColumns.bin", 4096) };
+	static inline discPageManager<Column> storedColumns{ discPageManager<Column>(&columnSerializer, "SerializedColumns.bin", 512) };
 
+	static inline cachePageManager<Table> cachedTables{};
+	static inline discPageManager<Table> storedTables{ discPageManager<Table>(&tableSerializer, "SerializedTables.bin", 512) };
+	
+	static inline cachePageManager<DataBase> cachedDatabases{};
+	static inline discPageManager<DataBase> storedDatabases{ discPageManager<DataBase>(&databaseSerializer, "SerializedDatabases.bin", 512)};
 	// Later saving metadata about databases, settings, etc. can be added here
-
 	// Later change to four funcs that can distinguish where what goes
 
 public:
-	// NODES // 
+	// Generic page operations
+	template <typename>
+	static constexpr bool unsupportedType = false;
 
-	// Get node from cache or disc, if not found return nullptr.
-	static RAIIhandler<BTreeNode> getNode(int pageID)
+	template <typename T>
+	static auto& cache()
 	{
-		BTreeNode* node;
-		BTreeNode liveNode;
+		if constexpr (std::is_same_v<T, BTreeNode>)
+			return cachedNodes;
+		else if constexpr (std::is_same_v<T, B_Tree>)
+			return cachedTrees;
+		else if constexpr (std::is_same_v<T, Column>)
+			return cachedColumns;
+		else if constexpr (std::is_same_v<T, Table>)
+			return cachedTables;
+		else if constexpr (std::is_same_v<T, DataBase>)
+			return cachedDatabases;
+		else if constexpr (std::is_same_v<T, StoredDataBases>)
+			return cachedDatabaseCatalogs;
+		else
+			static_assert(unsupportedType<T>, "Nieobslugiwany typ");
+	}
+
+	template <typename T>
+	static auto& storage()
+	{
+		if constexpr (std::is_same_v<T, BTreeNode>)
+			return storedNodes;
+		else if constexpr (std::is_same_v<T, B_Tree>)
+			return storedTrees;
+		else if constexpr (std::is_same_v<T, Column>)
+			return storedColumns;
+		else if constexpr (std::is_same_v<T, Table>)
+			return storedTables;
+		else if constexpr (std::is_same_v<T, DataBase>)
+			return storedDatabases;
+		else if constexpr (std::is_same_v<T, StoredDataBases>)
+			return storedDatabaseCatalogs;
+		else
+			static_assert(unsupportedType<T>, "Nieobslugiwany typ");
+	}
+
+	template <typename T>
+	static RAIIhandler<T> get(int pageID)
+	{
+		T* obj{ nullptr };
+		T liveObj;
 		// CHECK cache
-		node = cachedNodes.get(pageID);
-		if(node != nullptr)
+		obj = cache<T>().get(pageID);
+		if (obj != nullptr)
 		{
 			// IS in cache
-			return RAIIhandler<BTreeNode>(node, &cachedNodes, pageID);
-		}
-		// TRY disc
-		else 
-		{
-			if(storedNodes.deserializeObject(pageID, liveNode))
-			{
-				// Added to cache
-				cachedNodes.load(liveNode, pageID);
-				node = cachedNodes.get(pageID);
-				return RAIIhandler<BTreeNode>(node, &cachedNodes, pageID);
-			}else
-			{
-				// DO not exist
-				return RAIIhandler<BTreeNode>(nullptr, &cachedNodes, pageID);
-			}
-		}
-	}
-
-	// store node in disc form cache, mark it as clean.
-	static void storeNode(int pageID)
-	{
-		BTreeNode* node {};
-		node = cachedNodes.get(pageID);
-
-		if(node != nullptr)
-		{
-			storedNodes.modifyPage(pageID, *node);
-			cachedNodes.markClean(pageID);
-		}
-	}
-
-	// Remove node from cache and disc, if it exists.
-	static void removeNode(int pageID);
-
-	// Creates page in sorage and then put it in cache.
-	static int createNode(BTreeNode &node)
-	{
-		int pageID = storedNodes.createPage(node);
-		cachedNodes.insert(node, pageID);
-
-		return pageID;
-	}
-
-	
-	// TREES // 
-
-	//Get tree from cache or disc, if not found return nullptr.
-	static RAIIhandler<B_Tree> getTree(int pageID)
-	{
-		B_Tree* tree {nullptr};
-		B_Tree liveTree;
-		// CHECK cache
-		tree = cachedTrees.get(pageID);
-		if (tree != nullptr)
-		{
-			// IS in cache
-			return RAIIhandler<B_Tree>(tree, &cachedTrees, pageID);
+			return RAIIhandler<T>(obj, &cache<T>(), pageID);
 		}
 		// TRY disc
 		else
 		{
-				if (storedTrees.deserializeObject(pageID, liveTree))
-				{
-					// Added to cache
-					cachedTrees.load(liveTree, pageID);
-					tree = cachedTrees.get(pageID);
-					return RAIIhandler<B_Tree>(tree, &cachedTrees, pageID);
-				}
-				else
-				{
-					// DO not exist
-					return RAIIhandler<B_Tree>(nullptr, &cachedTrees, pageID);
-				}
-			
-		}
-	}
-
-	//// store node in disc form cache, mark it as clean.
-	static void storeTree(int pageID)
-	{
-		B_Tree* tree{};
-		tree = cachedTrees.get(pageID);
-
-		if (tree != nullptr)
-		{
-			storedTrees.modifyPage(pageID, *tree);
-			cachedTrees.markClean(pageID);
-		}
-	}
-
-	//// Remove node from cache and disc, if it exists.
-	static void removeTree(int pageID);
-
-	//// Creates page in sorage and then put it in cache.
-	static int createTree(B_Tree& tree)
-	{
-		int pageID = storedTrees.createPage(tree);
-		cachedTrees.insert(tree, pageID);
-
-		return pageID;
-	}
-
-
-	// COLUMNS //
-
-	static RAIIhandler<Column> getColumn(int pageID)
-	{
-		Column* column{ nullptr };
-		Column liveColumn;
-		// CHECK cache
-		column = cachedColumns.get(pageID);
-		if (column != nullptr)
-		{
-			// IS in cache
-			return RAIIhandler<Column>(column, &cachedColumns, pageID);
-		}
-		// TRY disc
-		else
-		{
-			if (storedColumns.deserializeObject(pageID, liveColumn))
+			if (storage<T>().deserializeObject(pageID, liveObj))
 			{
 				// Added to cache
-				cachedColumns.load(liveColumn, pageID);
-				column = cachedColumns.get(pageID);
-				return RAIIhandler<Column>(column, &cachedColumns, pageID);
+				cache<T>().load(liveObj, pageID);
+				obj = cache<T>().get(pageID);
+				return RAIIhandler<T>(obj, &cache<T>(), pageID);
 			}
 			else
 			{
 				// DO not exist
-				return RAIIhandler<Column>(nullptr, &cachedColumns, pageID);
+				return RAIIhandler<T>(nullptr, &cache<T>(), pageID);
 			}
 		}
 	}
 
-	static void storeColumn(int pageID)
+	template <typename T>
+	static void store(int pageID)
 	{
-		Column* column{};
-		column = cachedColumns.get(pageID);
+		T* obj{};
+		obj = cache<T>().get(pageID);
 
-		if (column != nullptr)
+		if (obj != nullptr)
 		{
-			storedColumns.modifyPage(pageID, *column);
-			cachedColumns.markClean(pageID);
+			storage<T>().modifyPage(pageID, *obj);
+			cache<T>().markClean(pageID);
 		}
 	}
 
-	static void removeColumn(int pageID);
-
-	static int createColumn(Column& col)
+	template <typename T>
+	static int create(T& obj)
 	{
-		int pageID = storedColumns.createPage(col);
-		cachedColumns.insert(col, pageID);
+		int pageID = storage<T>().createPage(obj);
+		cache<T>().insert(obj, pageID);
 
 		return pageID;
 	}
 
+	template <typename T>
+	static void remove(int pageID)
+	{
+		if (!cache<T>().remove(pageID))
+			throw std::runtime_error("Cannot remove a pinned, locked or dirty page");
 
-	// 
+		storage<T>().deletePage(pageID);
+	}
+
+	// for emergency only
+	static void forceRemoveNode(int pageID)
+	{
+		cachedNodes.forceRemove(pageID);
+	}
+	static void forceRemoveTree(int pageID)
+	{
+		cachedTrees.forceRemove(pageID);
+	}
+	static void forceRemoveColumn(int pageID)
+	{
+		cachedColumns.forceRemove(pageID);
+	}
+	static void forceRemoveCTable(int pageID)
+	{
+		cachedTables.forceRemove(pageID);
+	}
 
 	static void clearCache()
 	{
 		cachedNodes.clear();
 		cachedTrees.clear();
+		cachedColumns.clear();
+		cachedTables.clear();
+		cachedDatabases.clear();
+		cachedDatabaseCatalogs.clear();
 	}
 
+	// Just save all
 	static void flushAll()
 	{
 		std::vector<int> dirtyNodes{ cachedNodes.getDirtyPages() };
 		std::vector<int> dirtyTrees{ cachedTrees.getDirtyPages() };
+		std::vector<int> dirtyColumns{ cachedColumns.getDirtyPages() };
+		std::vector<int> dirtyTables{ cachedTables.getDirtyPages() };
 
 		// save nodes
 
 		for (int id : dirtyNodes)
 		{
-			storeNode(id);
+			store<BTreeNode>(id);
 		}
 
 		for (int id : dirtyTrees)
 		{
-			storeTree(id);
+			store<B_Tree>(id);
 		}
+
+		for (int id : dirtyColumns)
+		{
+			store<Column>(id);
+		}
+
+		for (int id : dirtyTables)
+		{
+			store<Table>(id);
+		}
+
+		for (int id : cachedDatabases.getDirtyPages())
+		{
+			store<DataBase>(id);
+		}
+
+        for (int id : cachedDatabaseCatalogs.getDirtyPages())
+            store<StoredDataBases>(id);
 	}
 };

@@ -2,6 +2,9 @@
 #include "Values.h"
 #include "B_Tree.h"
 #include "Table.h"
+#include "DataBase.h"
+#include "StoredDataBases.h"
+#include <stdexcept>
 #include <vector>
 #include <string>
 #include <stdexcept>
@@ -9,6 +12,8 @@
 #include <fstream>
 #include <algorithm>
 #include <cstring>
+#include <unordered_set>
+#include <utility>
 
 
 // "C:\Users\Aron\source\repos\DataBaseOrg\x64\node"
@@ -19,6 +24,87 @@ class Serializer
 public:
 	virtual std::vector<char> serialize(const T& obj, int pageSize) = 0;
 	virtual T deserialize(const std::vector<char>& data, int pageSize) = 0;
+};
+
+class SerializerStoredDataBases : public Serializer<StoredDataBases>
+{
+public:
+    std::vector<char> serialize(const StoredDataBases& obj, int pageSize) override
+    {
+        if (pageSize < static_cast<int>(2 * sizeof(int)))
+            throw std::runtime_error("Page too small for StoredDataBases");
+        if (obj.storedDB.size() != obj.databaseCatalog.size())
+            throw std::runtime_error("Inconsistent database catalog");
+        std::vector<char> data(pageSize, '\0');
+        std::size_t pos = 0;
+        auto write = [&](const void* source, std::size_t size)
+        {
+            if (size > data.size() - pos)
+                throw std::runtime_error("StoredDataBases exceeds page size");
+            std::memcpy(data.data() + pos, source, size);
+            pos += size;
+        };
+        if (obj.storedDB.size() > (data.size() - 2 * sizeof(int)) / (2 * sizeof(int)))
+            throw std::runtime_error("Too many database names");
+        const int version = 2;
+        const int count = static_cast<int>(obj.storedDB.size());
+        write(&version, sizeof(version));
+        write(&count, sizeof(count));
+        std::unordered_set<std::string> usedNames;
+        for (const auto& name : obj.storedDB)
+        {
+            const auto entry = obj.databaseCatalog.find(name);
+            if (entry == obj.databaseCatalog.end() || entry->second < 0 ||
+                !usedNames.insert(name).second)
+                throw std::runtime_error("Invalid database catalog entry");
+            if (name.size() > data.size() - pos)
+                throw std::runtime_error("Database name too long");
+            const int length = static_cast<int>(name.size());
+            write(&length, sizeof(length));
+            write(name.data(), name.size());
+            write(&entry->second, sizeof(entry->second));
+        }
+        return data;
+    }
+
+    StoredDataBases deserialize(const std::vector<char>& data, int pageSize) override
+    {
+        if (pageSize < static_cast<int>(2 * sizeof(int)) ||
+            data.size() != static_cast<std::size_t>(pageSize))
+            throw std::runtime_error("Invalid StoredDataBases page size");
+        std::size_t pos = 0;
+        auto read = [&](void* destination, std::size_t size)
+        {
+            if (size > data.size() - pos)
+                throw std::runtime_error("Corrupted StoredDataBases page");
+            std::memcpy(destination, data.data() + pos, size);
+            pos += size;
+        };
+        int version, count;
+        read(&version, sizeof(version));
+        read(&count, sizeof(count));
+        if (version != 2)
+            throw std::runtime_error("Unsupported StoredDataBases version");
+        if (count < 0 || static_cast<std::size_t>(count) > (data.size() - pos) / (2 * sizeof(int)))
+            throw std::runtime_error("Invalid database count");
+        StoredDataBases result;
+        result.storedDB.reserve(count);
+        for (int i = 0; i < count; ++i)
+        {
+            int length;
+            read(&length, sizeof(length));
+            if (length < 0 || static_cast<std::size_t>(length) > data.size() - pos)
+                throw std::runtime_error("Invalid database name length");
+            std::string name(data.data() + pos, static_cast<std::size_t>(length));
+            pos += static_cast<std::size_t>(length);
+            int databaseID;
+            read(&databaseID, sizeof(databaseID));
+            if (databaseID < 0 || !result.databaseCatalog.emplace(name, databaseID).second)
+                throw std::runtime_error("Invalid database catalog entry");
+            result.storedDB.push_back(std::move(name));
+        }
+        return result;
+    }
 };
 
 class SerializerInt : public Serializer<int>
@@ -108,12 +194,16 @@ public:
 		{
 			bool value = Values::isNull(obj.val);
 		}
-		else
+		else if(obj.type == DataType::Int)
 		{
 			std::int64_t value = std::get<std::int64_t>(obj.val);
 			std::memcpy(data.data() + pos, &value, sizeof(value));
 		}
-
+		else if(obj.type == DataType::Float)
+		{
+			float value = std::get<float>(obj.val);
+			std::memcpy(data.data() + pos, &value, sizeof(value));
+		}
 
 		return data;
 	}
@@ -277,6 +367,10 @@ public:
 			{
 				valueSize = static_cast<int>(sizeof(std::int64_t));
 			}
+			else if(key.type == DataType::Float)
+			{
+				valueSize = static_cast<int>(sizeof(float));
+			}
 			else
 			{
 				throw std::invalid_argument(
@@ -363,8 +457,294 @@ public:
 	}
 };
 
-class SerializeTable : public Serializer<Table>
-{};
+class SerializerTable : public Serializer<Table>
+{
+public:
+	std::vector<char> serialize(const Table& obj, int pageSize) override
+	{
+		if (pageSize < static_cast<int>(3 * sizeof(int)))
+			throw std::runtime_error("Za mala strona dla Table");
+
+		std::vector<char> data(pageSize, '\0');
+		std::size_t pos = 0;
+
+		auto write = [&](const void* source, std::size_t size)
+			{
+				if (size > data.size() - pos)
+					throw std::runtime_error("Table przekracza rozmiar strony");
+
+				std::memcpy(data.data() + pos, source, size);
+				pos += size;
+			};
+
+		// Kazda kolumna wymaga co najmniej length i columnID.
+		const std::size_t maxColumns =
+			(data.size() - 3 * sizeof(int)) / (2 * sizeof(int));
+
+		if (obj.names.size() > maxColumns)
+			throw std::runtime_error("Za duzo kolumn dla jednej strony");
+
+		if (obj.nextID < 0)
+			throw std::runtime_error("Nieprawidlowy nextID");
+
+		if (obj.names.size() != obj.columnsIDs.size())
+			throw std::runtime_error("Niespojny schemat Table");
+
+		int version = 1;
+		int columnCount = static_cast<int>(obj.names.size());
+
+		write(&version, sizeof(version));
+		write(&obj.nextID, sizeof(obj.nextID));
+		write(&columnCount, sizeof(columnCount));
+
+		std::unordered_set<std::string> usedNames;
+
+		for (const std::string& name : obj.names)
+		{
+			if (!usedNames.insert(name).second)
+				throw std::runtime_error("Powtorzona nazwa kolumny");
+
+			// pageSize jest int, wiec po tej kontroli rzutowanie jest bezpieczne.
+			if (name.size() > data.size() - pos)
+				throw std::runtime_error("Za dluga nazwa kolumny");
+
+			int length = static_cast<int>(name.size());
+			int columnID = obj.columnsIDs.at(name);
+
+			if (columnID < 0)
+				throw std::runtime_error("Nieprawidlowy identyfikator kolumny");
+
+			write(&length, sizeof(length));
+			write(name.data(), name.size());
+			write(&columnID, sizeof(columnID));
+		}
+
+		return data;
+	}
+
+	Table deserialize(const std::vector<char>& data, int pageSize) override
+	{
+		if (pageSize < static_cast<int>(3 * sizeof(int)) ||
+			data.size() != static_cast<std::size_t>(pageSize))
+		{
+			throw std::runtime_error("Nieprawidlowy rozmiar strony Table");
+		}
+
+		std::size_t pos = 0;
+
+		auto read = [&](void* destination, std::size_t size)
+			{
+				if (size > data.size() - pos)
+					throw std::runtime_error("Uszkodzone dane Table");
+
+				std::memcpy(destination, data.data() + pos, size);
+				pos += size;
+			};
+
+		int version;
+		int nextID;
+		int columnCount;
+
+		read(&version, sizeof(version));
+		read(&nextID, sizeof(nextID));
+		read(&columnCount, sizeof(columnCount));
+
+		if (version != 1)
+			throw std::runtime_error("Nieobslugiwana wersja Table");
+
+		if (nextID < 0 || columnCount < 0)
+			throw std::runtime_error("Nieprawidlowe metadane Table");
+
+		if (static_cast<std::size_t>(columnCount) >
+			(data.size() - pos) / (2 * sizeof(int)))
+		{
+			throw std::runtime_error("Nieprawidlowa liczba kolumn");
+		}
+
+		std::vector<std::string> names;
+		std::vector<int> columnsIDs;
+		std::unordered_set<std::string> usedNames;
+
+		names.reserve(columnCount);
+		columnsIDs.reserve(columnCount);
+
+		for (int i = 0; i < columnCount; ++i)
+		{
+			int length;
+			read(&length, sizeof(length));
+
+			if (length < 0 ||
+				static_cast<std::size_t>(length) > data.size() - pos)
+			{
+				throw std::runtime_error("Nieprawidlowa dlugosc nazwy");
+			}
+
+			std::string name(data.data() + pos,
+				static_cast<std::size_t>(length));
+			pos += static_cast<std::size_t>(length);
+
+			int columnID;
+			read(&columnID, sizeof(columnID));
+
+			if (columnID < 0)
+				throw std::runtime_error("Nieprawidlowy identyfikator kolumny");
+
+			if (!usedNames.insert(name).second)
+				throw std::runtime_error("Powtorzona nazwa kolumny");
+
+			names.push_back(std::move(name));
+			columnsIDs.push_back(columnID);
+		}
+
+		return Table(std::move(names), std::move(columnsIDs), nextID);
+	}
+};
+
+class SerializerDataBase : public Serializer<DataBase>
+{
+public:
+	std::vector<char> serialize(
+		const DataBase& obj, int pageSize) override
+	{
+		if (pageSize < 3 * static_cast<int>(sizeof(int)))
+			throw std::runtime_error("Za mala strona dla DataBase");
+
+		if (obj.tableNames.size() != obj.tableCatalog.size())
+			throw std::runtime_error("Niespojny katalog tabel");
+
+		std::vector<char> data(pageSize, '\0');
+		std::size_t pos = 0;
+
+		auto write = [&](const void* source, std::size_t size)
+			{
+				if (size > data.size() - pos)
+					throw std::runtime_error("DataBase przekracza rozmiar strony");
+
+				std::memcpy(data.data() + pos, source, size);
+				pos += size;
+			};
+
+		auto writeString = [&](const std::string& value)
+			{
+				// pageSize jest int: po tej kontroli rzutowanie jest bezpieczne.
+				if (value.size() > data.size())
+					throw std::runtime_error("Za dluga nazwa");
+
+				int length = static_cast<int>(value.size());
+				write(&length, sizeof(length));
+				write(value.data(), value.size());
+			};
+
+		const std::size_t maxTables =
+			data.size() / (2 * sizeof(int));
+
+		if (obj.tableNames.size() > maxTables)
+			throw std::runtime_error("Za duzo tabel dla jednej strony");
+
+		int version = 1;
+		int count = static_cast<int>(obj.tableNames.size());
+
+		write(&version, sizeof(version));
+		writeString(obj.name);
+		write(&count, sizeof(count));
+
+		std::unordered_set<std::string> usedNames;
+
+		for (const auto& name : obj.tableNames)
+		{
+			if (!usedNames.insert(name).second)
+				throw std::runtime_error("Powtorzona nazwa tabeli");
+
+			int tableID = obj.tableCatalog.at(name);
+
+			if (tableID < 0)
+				throw std::runtime_error("Nieprawidlowe ID tabeli");
+
+			writeString(name);
+			write(&tableID, sizeof(tableID));
+		}
+
+		return data;
+	}
+
+	DataBase deserialize(
+		const std::vector<char>& data, int pageSize) override
+	{
+		if (pageSize < 3 * static_cast<int>(sizeof(int)) ||
+			data.size() != static_cast<std::size_t>(pageSize))
+		{
+			throw std::runtime_error("Nieprawidlowy rozmiar strony DataBase");
+		}
+
+		std::size_t pos = 0;
+
+		auto read = [&](void* destination, std::size_t size)
+			{
+				if (size > data.size() - pos)
+					throw std::runtime_error("Uszkodzone dane DataBase");
+
+				std::memcpy(destination, data.data() + pos, size);
+				pos += size;
+			};
+
+		auto readString = [&]() -> std::string
+			{
+				int length;
+				read(&length, sizeof(length));
+
+				if (length < 0 ||
+					static_cast<std::size_t>(length) > data.size() - pos)
+				{
+					throw std::runtime_error("Nieprawidlowa dlugosc nazwy");
+				}
+
+				std::string value(
+					data.data() + pos,
+					static_cast<std::size_t>(length));
+
+				pos += static_cast<std::size_t>(length);
+				return value;
+			};
+
+		int version;
+		read(&version, sizeof(version));
+
+		if (version != 1)
+			throw std::runtime_error("Nieobslugiwana wersja DataBase");
+
+		DataBase result;
+		result.name = readString();
+
+		int count;
+		read(&count, sizeof(count));
+
+		if (count < 0 ||
+			static_cast<std::size_t>(count) >
+			(data.size() - pos) / (2 * sizeof(int)))
+		{
+			throw std::runtime_error("Nieprawidlowa liczba tabel");
+		}
+
+		for (int i = 0; i < count; ++i)
+		{
+			std::string name = readString();
+
+			int tableID;
+			read(&tableID, sizeof(tableID));
+
+			if (tableID < 0)
+				throw std::runtime_error("Nieprawidlowe ID tabeli");
+
+			if (!result.tableCatalog.emplace(name, tableID).second)
+				throw std::runtime_error("Powtorzona nazwa tabeli");
+
+			result.tableNames.push_back(std::move(name));
+		}
+
+		return result;
+	}
+};
+
 
 template <typename T>
 class discPageManager
@@ -436,9 +816,12 @@ public:
 	{
 		int pageID = findEmptyPage();
 		std::vector<char> data = serializer->serialize(obj, pageSize);
+		
+		if(!(fileManager.seekp(pageID * pageSize + offset, std::ios::beg) && fileManager.write(data.data(), pageSize)))
+		{
+			throw std::runtime_error("B³¹d dysku zapis sie nie uda³");
+		}
 
-		fileManager.seekp(pageID * pageSize + offset, std::ios::beg);
-		fileManager.write(data.data(), pageSize);
 
 		return pageID;
 	}
@@ -447,7 +830,7 @@ public:
 	void deletePage(int pageID)
 	{
 		// Fill vect with zeros and paste it in destined space
-		std::vector<char> emptyData(pageSize, '\0');
+		std::vector<char> emptyData(pageSize, static_cast<char>(0xFF));
 
 		fileManager.seekp(pageID * pageSize + offset, std::ios::beg);
 		fileManager.write(emptyData.data(), pageSize);
@@ -470,7 +853,7 @@ public:
 		for (int i = 0; i < pageCount; i++)
 		{
 			std::vector<char> data = readPage(i);
-			if (std::all_of(data.begin(), data.end(), [](char c) { return c == '\0'; }))
+			if (std::all_of(data.begin(), data.end(), [](char c) { return static_cast<unsigned char>(c) == 0xFF; }))
 			{
 				return i;
 			}

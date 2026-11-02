@@ -2,6 +2,7 @@
 #include <vector>
 #include <memory>
 #include "Values.h"
+#include <unordered_map>
 
 #pragma once
 /*
@@ -11,6 +12,9 @@
 
     korzysta ze zewnêtrznych klas dziedzicz¹cych po "IndexInterface*
 */
+
+
+using allData_t = std::unordered_map<int, Value>;
 
 struct Label
 {
@@ -50,4 +54,6 @@ public:
     virtual void clear() = 0;
 
     virtual std::size_t size() const = 0;
+
+    virtual allData_t getAllData() const = 0;
 };
